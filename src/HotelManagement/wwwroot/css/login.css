@@ -1,0 +1,15 @@
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: #f3f5f8; color: #182332; font: 16px/1.5 system-ui, sans-serif; }
+.card { width: 100%; max-width: 420px; padding: 28px; border: 1px solid #dbe1e8; border-radius: 12px; background: white; overflow-wrap: anywhere; }
+.eyebrow { color: #586679; font-size: 12px; letter-spacing: .06em; margin: 0 0 8px; }
+h1 { margin: 0 0 24px; font-size: 28px; line-height: 1.25; }
+.field { margin-bottom: 18px; }
+label { display: block; margin-bottom: 6px; font-weight: 600; }
+input, button { width: 100%; min-height: 44px; border-radius: 6px; font: inherit; }
+input { padding: 10px 12px; border: 1px solid #7b8898; background: white; }
+button { border: 0; padding: 10px; background: #174f87; color: white; font-weight: 600; cursor: pointer; }
+button:hover { background: #103f70; }
+input:focus-visible, button:focus-visible { outline: 3px solid #2274be; outline-offset: 3px; }
+.errors { color: #a51c2b; font-size: 14px; }
+.validation-summary-valid, .field-validation-valid { display: none; }
+.validation-summary-errors ul { margin: 0 0 18px; padding-left: 20px; }

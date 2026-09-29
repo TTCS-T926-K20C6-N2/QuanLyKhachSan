@@ -1,0 +1,34 @@
+@model HotelManagement.Models.LoginViewModel
+@{ Layout = null; }
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Đăng nhập — Quản lý Khách sạn</title>
+    <link rel="stylesheet" href="/css/login.css" />
+</head>
+<body>
+<main class="card">
+    <p class="eyebrow">HỆ THỐNG QUẢN LÝ KHÁCH SẠN</p>
+    <h1>Đăng nhập</h1>
+    <form action="/Login" method="post">
+        @Html.AntiForgeryToken()
+        <div class="errors" role="alert">@Html.ValidationSummary(true)</div>
+        <div class="field">
+            <label for="Email">Email</label>
+            <input id="Email" name="Email" type="text" inputmode="email" autocomplete="username"
+                   value="@Model.Email" aria-describedby="email-error" />
+            <div id="email-error" class="errors">@Html.ValidationMessage("Email")</div>
+        </div>
+        <div class="field">
+            <label for="Password">Mật khẩu</label>
+            <input id="Password" name="Password" type="password" autocomplete="current-password"
+                   aria-describedby="password-error" />
+            <div id="password-error" class="errors">@Html.ValidationMessage("Password")</div>
+        </div>
+        <button type="submit">Đăng nhập</button>
+    </form>
+</main>
+</body>
+</html>
