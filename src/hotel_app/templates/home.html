@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Danh sách phòng | Hotel Management{% endblock %}
+
+{% block content %}
+  {% set floors = [
+    {
+      "name": "Tầng 1",
+      "rooms": [
+        {"number": "101", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
+        {"number": "102", "type": "Phòng đôi", "status": "Đang sử dụng", "state": "occupied"},
+        {"number": "103", "type": "Phòng đơn", "status": "Đang dọn", "state": "cleaning"},
+        {"number": "104", "type": "VIP", "status": "Phòng trống", "state": "empty"}
+      ]
+    },
+    {
+      "name": "Tầng 2",
+      "rooms": [
+        {"number": "201", "type": "Phòng đôi", "status": "Đang sử dụng", "state": "occupied"},
+        {"number": "202", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
+        {"number": "203", "type": "VIP", "status": "Phòng trống", "state": "empty"},
+        {"number": "204", "type": "Phòng đôi", "status": "Đang dọn", "state": "cleaning"}
+      ]
+    },
+    {
+      "name": "Tầng 3",
+      "rooms": [
+        {"number": "301", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
+        {"number": "302", "type": "VIP", "status": "Đang sử dụng", "state": "occupied"},
+        {"number": "303", "type": "Phòng đôi", "status": "Phòng trống", "state": "empty"},
+        {"number": "304", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"}
+      ]
+    }
+  ] %}
+  {% set room_types = [
+    {"name": "Phòng đơn", "capacity": "1 người"},
+    {"name": "Phòng đôi", "capacity": "2 người"},
+    {"name": "VIP", "capacity": "2 người"}
+  ] %}
+
+  <section class="page-heading" aria-labelledby="home-title">
+    <div>
+      <p class="page-kicker">Sprint 1 / Quản lý phòng</p>
+      <h1 id="home-title">Danh sách & sơ đồ phòng</h1>
+      <p class="page-description">
+        Theo dõi bố cục phòng theo từng tầng và chuẩn bị cấu trúc UI cho các thao tác quản lý.
+      </p>
+    </div>
+    <p class="login-success">
+      <svg class="icon" aria-hidden="true"><use href="#icon-check"></use></svg>
+      Đăng nhập thành công
+    </p>
+  </section>
+
+  <div class="demo-notice" role="note">
+    <span class="demo-badge">UI mẫu</span>
+    <span>Phòng, trạng thái, loại phòng và các nút thao tác bên dưới chưa kết nối dữ liệu hoặc nghiệp vụ.</span>
+  </div>
+
+  <section id="room-list" class="dashboard-panel" aria-labelledby="room-list-title">
+    <header class="panel-header">
+      <div>
+        <h2 id="room-list-title">Sơ đồ phòng</h2>
+        <p>Danh sách phòng mẫu theo tầng dành cho PB-03..PB-06.</p>
+      </div>
+      <div class="panel-header__actions">
+        <a class="action-button action-button--primary" href="#" aria-disabled="true">
+          <span aria-hidden="true">+</span> Thêm phòng
+        </a>
+        <div class="room-legend" aria-label="Chú thích trạng thái mẫu">
+          <span class="legend-item"><span class="legend-dot legend-dot--empty"></span>Phòng trống</span>
+          <span class="legend-item"><span class="legend-dot legend-dot--occupied"></span>Đang sử dụng</span>
+          <span class="legend-item"><span class="legend-dot legend-dot--cleaning"></span>Đang dọn</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="floor-list">
+      {% for floor in floors %}
+        <section class="floor-section" aria-labelledby="floor-{{ loop.index }}-title">
+          <h3 id="floor-{{ loop.index }}-title" class="floor-title">{{ floor.name }}</h3>
+          <div class="room-grid">
+            {% for room in floor.rooms %}
+              <article
+                class="room-card room-card--{{ room.state }}"
+                aria-label="Phòng mẫu {{ room.number }}, {{ room.status }}"
+              >
+                <div class="room-card__top">
+                  <strong class="room-number">{{ room.number }}</strong>
+                  <span class="mock-badge">Mẫu</span>
+                </div>
+                <p class="room-type">{{ room.type }}</p>
+                <span class="room-status room-status--{{ room.state }}">{{ room.status }}</span>
+                <div class="room-actions" aria-label="Thao tác giao diện cho phòng {{ room.number }}">
+                  <a class="action-button action-button--edit" href="#" aria-disabled="true">Sửa</a>
+                  <a class="action-button action-button--delete" href="#" aria-disabled="true">Xóa</a>
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section id="room-types" class="dashboard-panel room-type-panel" aria-labelledby="room-type-title">
+    <header class="panel-header">
+      <div>
+        <h2 id="room-type-title">Thể loại phòng</h2>
+        <p>Bảng cấu trúc UI mẫu dành cho PB-16..PB-19.</p>
+      </div>
+      <a class="action-button action-button--primary" href="#" aria-disabled="true">
+        <span aria-hidden="true">+</span> Thêm loại phòng
+      </a>
+    </header>
+
+    <div class="room-type-table-wrap">
+      <table class="room-type-table">
+        <caption class="visually-hidden">Danh sách loại phòng mẫu</caption>
+        <thead>
+          <tr>
+            <th scope="col">Tên loại</th>
+            <th scope="col">Số người</th>
+            <th scope="col">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for room_type in room_types %}
+            <tr>
+              <td><strong>{{ room_type.name }}</strong><span class="mock-badge">Mẫu</span></td>
+              <td>{{ room_type.capacity }}</td>
+              <td>
+                <div class="table-actions" aria-label="Thao tác giao diện cho {{ room_type.name }}">
+                  <a class="action-button action-button--edit" href="#" aria-disabled="true">Sửa</a>
+                  <a class="action-button action-button--delete" href="#" aria-disabled="true">Xóa</a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

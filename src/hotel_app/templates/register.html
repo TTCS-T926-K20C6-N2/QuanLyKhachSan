@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tạo tài khoản | Quản lý Khách sạn</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="auth-card" aria-labelledby="register-title">
+        <p class="eyebrow">Hệ thống Quản lý Khách sạn</p>
+        <h1 id="register-title">Tạo tài khoản</h1>
+        <p class="intro">Đăng ký bằng Email và Mật khẩu để sử dụng hệ thống.</p>
+
+        {% if service_error %}
+          <div class="alert alert-error" role="alert">{{ service_error }}</div>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('register') }}" novalidate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <div class="field">
+            <label for="email">Email</label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              value="{{ email }}"
+              autocomplete="username"
+              required
+              autofocus
+              {% if errors.get('email') %}aria-invalid="true" aria-describedby="email-error"{% endif %}
+            >
+            {% if errors.get('email') %}
+              <p id="email-error" class="field-error">{{ errors['email'] }}</p>
+            {% endif %}
+          </div>
+
+          <div class="field">
+            <label for="password">Mật khẩu</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              minlength="8"
+              autocomplete="new-password"
+              required
+              {% if errors.get('password') %}aria-invalid="true" aria-describedby="password-error"{% endif %}
+            >
+            {% if errors.get('password') %}
+              <p id="password-error" class="field-error">{{ errors['password'] }}</p>
+            {% endif %}
+          </div>
+
+          <div class="field">
+            <label for="confirm-password">Xác nhận Mật khẩu</label>
+            <input
+              id="confirm-password"
+              name="confirm_password"
+              type="password"
+              minlength="8"
+              autocomplete="new-password"
+              required
+              {% if errors.get('confirm_password') %}aria-invalid="true" aria-describedby="confirm-password-error"{% endif %}
+            >
+            {% if errors.get('confirm_password') %}
+              <p id="confirm-password-error" class="field-error">{{ errors['confirm_password'] }}</p>
+            {% endif %}
+          </div>
+
+          <button type="submit">Tạo tài khoản</button>
+        </form>
+
+        <p class="auth-switch">
+          Đã có tài khoản?
+          <a href="{{ url_for('login') }}">Đăng nhập</a>
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
