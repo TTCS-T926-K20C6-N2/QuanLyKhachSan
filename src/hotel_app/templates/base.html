@@ -99,7 +99,6 @@
           <a class="topbar-logout" href="#" aria-disabled="true" title="Chức năng Đăng xuất chưa được kết nối">
             <svg class="icon" aria-hidden="true"><use href="#icon-logout"></use></svg>
             <span>Đăng xuất</span>
-            <small>UI</small>
           </a>
         </div>
       </header>
@@ -107,27 +106,25 @@
       <aside class="sidebar">
         <nav class="sidebar-nav" aria-label="Điều hướng chính">
           <div class="nav-section">
-            <p class="nav-section-title">Sprint 1</p>
             <a class="nav-link nav-link--active" href="{{ url_for('home') }}" aria-current="page">
               <svg class="icon"><use href="#icon-map"></use></svg>
               <span>Tổng quan / Sơ đồ phòng</span>
             </a>
             <a class="nav-link" href="{{ url_for('home') }}#room-list">
               <svg class="icon"><use href="#icon-rooms"></use></svg>
-              <span>Quản lý phòng</span><small>UI</small>
+              <span>Quản lý phòng</span>
             </a>
             <a class="nav-link" href="{{ url_for('home') }}#room-types">
               <svg class="icon"><use href="#icon-report"></use></svg>
-              <span>Thể loại phòng</span><small>UI</small>
+              <span>Thể loại phòng</span>
             </a>
             <span class="nav-link nav-link--placeholder" aria-disabled="true">
               <svg class="icon"><use href="#icon-logout"></use></svg>
-              <span>Đăng xuất</span><small>UI</small>
+              <span>Đăng xuất</span>
             </span>
           </div>
         </nav>
 
-        <p class="sidebar-note">Chỉ hiển thị phạm vi Sprint 1. Các thao tác gắn nhãn UI chưa kết nối nghiệp vụ.</p>
       </aside>
 
       <main id="main-content" class="main-content">
