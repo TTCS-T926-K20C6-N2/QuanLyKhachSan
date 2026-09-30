@@ -422,6 +422,114 @@ a.nav-link:not(.nav-link--active):focus-visible {
   margin-top: 22px;
 }
 
+.room-types-page,
+.room-type-results {
+  margin-top: 22px;
+}
+
+.room-type-add {
+  flex: 0 0 auto;
+}
+
+.room-type-search {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 20px 22px 22px;
+}
+
+.room-type-search__field {
+  flex: 1;
+  max-width: 520px;
+}
+
+.room-type-search label {
+  display: block;
+  margin-bottom: 7px;
+  color: #334b63;
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.room-type-search select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid #c8d6e3;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #244a6b;
+  font: inherit;
+  outline: none;
+}
+
+.room-type-search select:focus {
+  border-color: var(--blue-700);
+  box-shadow: 0 0 0 3px rgba(18, 105, 167, 0.14);
+}
+
+.room-type-search__submit {
+  min-width: 104px;
+  cursor: pointer;
+}
+
+.result-count {
+  display: inline-flex;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--blue-100);
+  color: var(--blue-800);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.room-type-results__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 22px;
+}
+
+.room-type-result-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #dce5ed;
+  border-left: 4px solid var(--green);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.room-type-result-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.room-type-result-card strong {
+  color: #122b45;
+  font-size: 1.05rem;
+}
+
+.room-type-result-card p {
+  margin: 12px 0 3px;
+  color: #52667a;
+  font-size: 0.86rem;
+}
+
+.room-type-result-card small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.room-type-empty {
+  margin: 0;
+  padding: 28px 22px;
+  color: var(--muted);
+  text-align: center;
+}
+
 .panel-header {
   display: flex;
   align-items: flex-start;
@@ -745,7 +853,8 @@ a:focus-visible,
 }
 
 @media (max-width: 1180px) {
-  .room-grid {
+  .room-grid,
+  .room-type-results__grid {
     grid-template-columns: repeat(2, minmax(160px, 1fr));
   }
 }
@@ -855,6 +964,23 @@ a:focus-visible,
 
   .room-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .room-type-search {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .room-type-search__field {
+    max-width: none;
+  }
+
+  .room-type-search__submit {
+    width: 100%;
+  }
+
+  .room-type-results__grid {
+    grid-template-columns: 1fr;
   }
 
   .demo-notice {
