@@ -267,10 +267,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @app.route("/logout", methods=["POST"])
     def logout():
         session.clear()
-<<<<<<< HEAD
         flash("Đăng xuất thành công.", "success")
-=======
->>>>>>> 93fa3cd (Update giao dien The Loai Phong)
         return redirect(url_for("login"))
 
     @app.route("/room-types")
