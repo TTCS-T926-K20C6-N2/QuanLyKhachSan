@@ -64,6 +64,9 @@
       <symbol id="icon-logout" viewBox="0 0 24 24">
         <path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"></path>
       </symbol>
+      <symbol id="icon-chevron" viewBox="0 0 24 24">
+        <path d="m6 9 6 6 6-6"></path>
+      </symbol>
       <symbol id="icon-bell" viewBox="0 0 24 24">
         <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
         <path d="M10 21h4"></path>
@@ -91,15 +94,26 @@
         </div>
 
         <div class="account-area">
-          <span class="account-avatar" aria-hidden="true">{{ current_email[:1]|upper }}</span>
-          <span class="account-copy">
-            <strong>{{ current_email }}</strong>
-            <small><span class="online-dot" aria-hidden="true"></span>Đang đăng nhập</small>
-          </span>
-          <a class="topbar-logout" href="#" aria-disabled="true" title="Chức năng Đăng xuất chưa được kết nối">
-            <svg class="icon" aria-hidden="true"><use href="#icon-logout"></use></svg>
-            <span>Đăng xuất</span>
-          </a>
+          <details class="account-menu">
+            <summary class="account-menu__trigger" aria-label="Tài khoản: {{ current_email }}">
+              <span class="account-avatar" aria-hidden="true">{{ current_email[:1]|upper }}</span>
+              <span class="account-copy">
+                <strong>{{ current_email }}</strong>
+                <small><span class="online-dot" aria-hidden="true"></span>Đang đăng nhập</small>
+              </span>
+              <svg class="icon account-menu__chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+            </summary>
+            <div class="account-menu__dropdown">
+              <a class="account-menu__item" href="{{ url_for('account') }}">
+                <svg class="icon" aria-hidden="true"><use href="#icon-user"></use></svg>
+                <span>Thông tin tài khoản</span>
+              </a>
+              <button class="account-menu__item" type="button" disabled>
+                <svg class="icon" aria-hidden="true"><use href="#icon-logout"></use></svg>
+                <span>Đăng xuất</span>
+              </button>
+            </div>
+          </details>
         </div>
       </header>
 
@@ -118,10 +132,6 @@
               <svg class="icon"><use href="#icon-report"></use></svg>
               <span>Thể loại phòng</span>
             </a>
-            <span class="nav-link nav-link--placeholder" aria-disabled="true">
-              <svg class="icon"><use href="#icon-logout"></use></svg>
-              <span>Đăng xuất</span>
-            </span>
           </div>
         </nav>
 

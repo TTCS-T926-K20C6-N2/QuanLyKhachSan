@@ -90,6 +90,40 @@ def test_home_redirects_unauthenticated_user_to_login(client):
     assert response.headers["Location"].endswith("/login")
 
 
+def test_account_page_shows_email_without_password_data(client):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+
+    response = client.get("/account")
+    page = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Thông tin tài khoản" in page
+    assert DEMO_EMAIL in page
+    assert "password_hash" not in page
+    assert DEMO_PASSWORD not in page
+
+
+def test_account_menu_logout_is_disabled(client):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+    page = client.get("/").get_data(as_text=True)
+
+    assert re.search(r'<button[^>]*disabled[^>]*>.*?Đăng xuất', page, re.DOTALL)
+    response = client.post("/logout")
+    assert response.status_code == 404
+    with client.session_transaction() as stored_session:
+        assert isinstance(stored_session["user_id"], int)
+
+
+def test_account_menu_replaces_standalone_logout_links(client):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+
+    page = client.get("/").get_data(as_text=True)
+
+    assert "Thông tin tài khoản" in page
+    assert page.count("Đăng xuất") == 1
+    assert 'action="/logout"' not in page
+
+
 def test_database_contains_scrypt_hash_not_plaintext(app):
     with app.app_context():
         user = db.session.execute(
