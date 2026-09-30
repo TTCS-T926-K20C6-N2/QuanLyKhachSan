@@ -255,7 +255,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
-        return render_template("account.html", user=user)
+        return redirect(url_for("home"))
 
     @app.route("/room-types")
     def room_types():

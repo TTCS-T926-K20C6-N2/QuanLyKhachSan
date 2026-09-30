@@ -90,17 +90,22 @@ def test_home_redirects_unauthenticated_user_to_login(client):
     assert response.headers["Location"].endswith("/login")
 
 
-def test_account_page_shows_email_without_password_data(client):
+def test_account_page_is_disabled(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
 
     response = client.get("/account")
-    page = response.get_data(as_text=True)
 
-    assert response.status_code == 200
-    assert "Thông tin tài khoản" in page
-    assert DEMO_EMAIL in page
-    assert "password_hash" not in page
-    assert DEMO_PASSWORD not in page
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/")
+
+
+def test_account_menu_item_is_disabled_but_visible(client):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+    page = client.get("/").get_data(as_text=True)
+
+    assert re.search(
+        r'<button[^>]*disabled[^>]*>.*?Thông tin tài khoản', page, re.DOTALL
+    )
 
 
 def test_account_menu_logout_is_disabled(client):
