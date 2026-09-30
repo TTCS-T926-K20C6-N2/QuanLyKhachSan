@@ -94,13 +94,13 @@
         </div>
 
         <div class="account-area">
-          <details class="account-menu">
-            <summary class="account-menu__trigger" aria-label="Tài khoản: {{ current_email }}">
+          <div class="account-identity" role="group" aria-label="Tài khoản: {{ current_email }}">
               <span class="account-avatar" aria-hidden="true">{{ current_email[:1]|upper }}</span>
               <span class="account-copy">
                 <strong>{{ current_email }}</strong>
                 <small><span class="online-dot" aria-hidden="true"></span>Đang đăng nhập</small>
               </span>
+<<<<<<< HEAD
               <svg class="icon account-menu__chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
             </summary>
             <div class="account-menu__dropdown">
@@ -117,6 +117,9 @@
               </form>
             </div>
           </details>
+=======
+          </div>
+>>>>>>> 93fa3cd (Update giao dien The Loai Phong)
         </div>
       </header>
 
@@ -137,7 +140,13 @@
             </a>
           </div>
         </nav>
-
+        <form class="sidebar-logout" method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="sidebar-logout__button" type="submit">
+            <svg class="icon" aria-hidden="true"><use href="#icon-logout"></use></svg>
+            <span>Đăng xuất</span>
+          </button>
+        </form>
       </aside>
 
       <main id="main-content" class="main-content">

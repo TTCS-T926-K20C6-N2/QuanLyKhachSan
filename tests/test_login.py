@@ -99,14 +99,33 @@ def test_account_page_is_disabled(client):
     assert response.headers["Location"].endswith("/")
 
 
-def test_account_menu_item_is_disabled_but_visible(client):
+def test_account_info_menu_item_is_removed(client):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+    page = client.get("/").get_data(as_text=True)
+
+    assert "Thông tin tài khoản" not in page
+
+
+def test_sidebar_logout_clears_session_and_redirects_to_login(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
     page = client.get("/").get_data(as_text=True)
 
     assert re.search(
-        r'<button[^>]*disabled[^>]*>.*?Thông tin tài khoản', page, re.DOTALL
+        r'<aside class="sidebar">.*?'
+        r'<form class="sidebar-logout" method="post" action="/logout">.*?'
+        r'<button class="sidebar-logout__button" type="submit">.*?Đăng xuất',
+        page,
+        re.DOTALL,
     )
+    csrf_token = re.search(
+        r'<form class="sidebar-logout".*?'
+        r'name="csrf_token"[^>]*value="([^"]+)"',
+        page,
+        re.DOTALL,
+    )
+    assert csrf_token is not None
 
+<<<<<<< HEAD
 
 def test_logout_clears_session_and_redirects_to_login(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
@@ -126,22 +145,30 @@ def test_logout_clears_session_and_redirects_to_login(client):
     )
     assert csrf_token is not None
 
+=======
+>>>>>>> 93fa3cd (Update giao dien The Loai Phong)
     response = client.post("/logout", data={"csrf_token": csrf_token.group(1)})
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/login")
     with client.session_transaction() as stored_session:
         assert "user_id" not in stored_session
+<<<<<<< HEAD
 
     login_page = client.get("/login").get_data(as_text=True)
     assert "Đăng xuất thành công." in login_page
 
 
 def test_account_menu_uses_post_form_for_logout(client):
+=======
+
+
+def test_sidebar_logout_replaces_account_menu_items(client):
+>>>>>>> 93fa3cd (Update giao dien The Loai Phong)
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
 
     page = client.get("/").get_data(as_text=True)
 
-    assert "Thông tin tài khoản" in page
+    assert "Thông tin tài khoản" not in page
     assert page.count("Đăng xuất") == 1
     assert 'method="post" action="/logout"' in page
 
