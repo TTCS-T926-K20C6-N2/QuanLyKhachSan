@@ -250,6 +250,13 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return redirect(url_for("login"))
         return render_template("home.html", user=user)
 
+    @app.route("/account")
+    def account():
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+        return render_template("account.html", user=user)
+
     @app.route("/room-types")
     def room_types():
         user = current_user()
