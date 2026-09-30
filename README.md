@@ -2,13 +2,13 @@
 
 Login slice cho SCRUM-21 / PB-01, dùng Flask, SQLAlchemy, SQLite, Jinja và Flask Session.
 
-## Prerequisites
+## Prerequisites(Chuẩn bị trước)
 
 - Python 3.x
 - VS Code
 - VS Code Python extension và Python Debugger extension
 
-## First setup
+## First setup(Bước cài đặt đầu)
 
 Trong PowerShell tại project root:
 
