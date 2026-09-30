@@ -108,25 +108,42 @@ def test_account_menu_item_is_disabled_but_visible(client):
     )
 
 
-def test_account_menu_logout_is_disabled(client):
+def test_logout_clears_session_and_redirects_to_login(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
     page = client.get("/").get_data(as_text=True)
 
-    assert re.search(r'<button[^>]*disabled[^>]*>.*?Đăng xuất', page, re.DOTALL)
-    response = client.post("/logout")
-    assert response.status_code == 404
+    assert re.search(
+        r'<form method="post" action="/logout">.*?'
+        r'<button class="account-menu__item" type="submit">.*?Đăng xuất',
+        page,
+        re.DOTALL,
+    )
+    csrf_token = re.search(
+        r'<form method="post" action="/logout">.*?'
+        r'name="csrf_token"[^>]*value="([^"]+)"',
+        page,
+        re.DOTALL,
+    )
+    assert csrf_token is not None
+
+    response = client.post("/logout", data={"csrf_token": csrf_token.group(1)})
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
     with client.session_transaction() as stored_session:
-        assert isinstance(stored_session["user_id"], int)
+        assert "user_id" not in stored_session
+
+    login_page = client.get("/login").get_data(as_text=True)
+    assert "Đăng xuất thành công." in login_page
 
 
-def test_account_menu_replaces_standalone_logout_links(client):
+def test_account_menu_uses_post_form_for_logout(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
 
     page = client.get("/").get_data(as_text=True)
 
     assert "Thông tin tài khoản" in page
     assert page.count("Đăng xuất") == 1
-    assert 'action="/logout"' not in page
+    assert 'method="post" action="/logout"' in page
 
 
 def test_database_contains_scrypt_hash_not_plaintext(app):
