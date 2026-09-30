@@ -257,6 +257,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return redirect(url_for("login"))
         return redirect(url_for("home"))
 
+    @app.route("/logout", methods=["POST"])
+    def logout():
+        session.clear()
+        flash("Đăng xuất thành công.", "success")
+        return redirect(url_for("login"))
+
     @app.route("/room-types")
     def room_types():
         user = current_user()

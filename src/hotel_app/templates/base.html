@@ -108,10 +108,13 @@
                 <svg class="icon" aria-hidden="true"><use href="#icon-user"></use></svg>
                 <span>Thông tin tài khoản</span>
               </button>
-              <button class="account-menu__item" type="button" disabled>
-                <svg class="icon" aria-hidden="true"><use href="#icon-logout"></use></svg>
-                <span>Đăng xuất</span>
-              </button>
+              <form method="post" action="{{ url_for('logout') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="account-menu__item" type="submit">
+                  <svg class="icon" aria-hidden="true"><use href="#icon-logout"></use></svg>
+                  <span>Đăng xuất</span>
+                </button>
+              </form>
             </div>
           </details>
         </div>
