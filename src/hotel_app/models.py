@@ -26,3 +26,16 @@ class User(db.Model):
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
 
+
+# Model lưu thông tin phòng cho SCRUM-23
+class Room(db.Model):
+    __tablename__ = 'rooms'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)   # Tên hoặc số phòng (ví dụ: Phòng 101)
+    price = db.Column(db.Float, nullable=False)        # Giá thuê (VNĐ)
+    area = db.Column(db.Float, nullable=True)           # Diện tích (m²)
+    description = db.Column(db.Text, nullable=True)    # Mô tả phòng
+
+    def __repr__(self):
+        return f'<Room {self.name}>'

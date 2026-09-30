@@ -13,7 +13,7 @@ from flask_wtf.csrf import CSRFError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .extensions import csrf, db
-from .models import User, normalize_email
+from .models import Room, User, normalize_email
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -333,4 +333,33 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     return app
 
 
-app = create_app()
+@app.route('/add-room', methods=['GET', 'POST'])
+def add_room():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        price = request.form.get('price')
+        area = request.form.get('area')
+        description = request.form.get('description')
+
+        if not name or not price:
+            flash('Vui lòng nhập đầy đủ tên phòng và giá thuê!')
+            return redirect(url_for('add_room'))
+
+        new_room = Room(
+            name=name,
+            price=float(price),
+            area=float(area) if area else None,
+            description=description
+        )
+
+        try:
+            db.session.add(new_room)
+            db.session.commit()
+            flash('Thêm phòng cho thuê thành công!')
+            return redirect(url_for('add_room'))
+        except Exception as e:
+            db.session.rollback()
+            flash('Đã xảy ra lỗi khi lưu phòng: ' + str(e))
+            return redirect(url_for('add_room'))
+
+    return render_template('add_room.html')

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Thêm mới phòng cho thuê</title>
+</head>
+<body>
+    <h2>Thêm phòng cho thuê mới</h2>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul style="color: red;">
+        {% for message in messages %}
+          <li>{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form action="/add-room" method="POST">
+        <p>
+            <label>Tên / Số phòng (*):</label><br>
+            <input type="text" name="name" placeholder="Ví dụ: Phòng 101" required>
+        </p>
+        <p>
+            <label>Giá thuê (VNĐ/tháng) (*):</label><br>
+            <input type="number" name="price" placeholder="Ví dụ: 2500000" required>
+        </p>
+        <p>
+            <label>Diện tích (m²):</label><br>
+            <input type="number" step="0.1" name="area" placeholder="Ví dụ: 25.5">
+        </p>
+        <p>
+            <label>Mô tả chi tiết:</label><br>
+            <textarea name="description" rows="4" cols="40"></textarea>
+        </p>
+        <button type="submit">Lưu thông tin phòng</button>
+    </form>
+</body>
+</html>
