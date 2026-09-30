@@ -35,41 +35,44 @@ def test_room_types_requires_login(client):
     assert response.headers["Location"].endswith("/login")
 
 
-def test_room_types_page_contains_search_options_and_add_action(client):
+def test_room_types_page_shows_type_management_table(client):
     assert _login(client).status_code == 302
 
     response = client.get("/room-types")
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert 'name="room_type"' in html
-    assert "Tất cả" in html
+    assert "Quản lý Thể loại phòng" in html
+    assert "Danh sách thể loại phòng" in html
+    assert "Tên thể loại phòng" in html
+    assert "Đơn giá / đêm" in html
+    assert "Sức chứa" in html
     assert "Phòng tiêu chuẩn" in html
-    assert "Phòng 2 giường đơn" in html
-    assert "Phòng 1 giường đôi" in html
-    assert "Phòng vip" in html
-    assert "Thêm thể loại phòng" in html
+    assert "500,000 VNĐ" in html
+    assert "Phòng VIP" in html
+    assert "1,200,000 VNĐ" in html
+    assert 'name="room_type"' not in html
 
 
-def test_room_type_filter_returns_matching_rooms(client):
+def test_room_type_management_actions_are_disabled(client):
     assert _login(client).status_code == 302
 
-    response = client.get("/room-types?room_type=Phòng%20vip")
-    html = response.get_data(as_text=True)
+    html = client.get("/room-types").get_data(as_text=True)
 
-    assert response.status_code == 200
-    assert "3 phòng" in html
-    assert "Phòng 104" in html
-    assert "Phòng 203" in html
-    assert "Phòng 302" in html
-    assert "Phòng 101" not in html
+    assert re.search(
+        r'<button class="action-button action-button--primary room-type-add" type="button" disabled>',
+        html,
+    )
+    assert html.count('class="action-button action-button--edit" type="button" disabled') == 2
+    assert html.count('class="action-button action-button--delete" type="button" disabled') == 2
 
 
-def test_invalid_room_type_filter_falls_back_to_all_rooms(client):
+def test_room_cards_stay_on_room_management_page(client):
     assert _login(client).status_code == 302
 
-    response = client.get("/room-types?room_type=Không%20tồn%20tại")
-    html = response.get_data(as_text=True)
+    room_types_page = client.get("/room-types").get_data(as_text=True)
+    room_management_page = client.get("/").get_data(as_text=True)
 
-    assert response.status_code == 200
-    assert "12 phòng" in html
+    assert "Phòng 101" not in room_types_page
+    assert 'aria-label="Phòng mẫu 101' in room_management_page
+    assert 'class="room-grid"' in room_management_page

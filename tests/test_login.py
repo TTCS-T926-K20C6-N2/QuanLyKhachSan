@@ -99,27 +99,26 @@ def test_account_page_is_disabled(client):
     assert response.headers["Location"].endswith("/")
 
 
-def test_account_menu_item_is_disabled_but_visible(client):
+def test_account_info_menu_item_is_removed(client):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+    page = client.get("/").get_data(as_text=True)
+
+    assert "Thông tin tài khoản" not in page
+
+
+def test_sidebar_logout_clears_session_and_redirects_to_login(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
     page = client.get("/").get_data(as_text=True)
 
     assert re.search(
-        r'<button[^>]*disabled[^>]*>.*?Thông tin tài khoản', page, re.DOTALL
-    )
-
-
-def test_logout_clears_session_and_redirects_to_login(client):
-    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
-    page = client.get("/").get_data(as_text=True)
-
-    assert re.search(
-        r'<form method="post" action="/logout">.*?'
-        r'<button class="account-menu__item" type="submit">.*?Đăng xuất',
+        r'<aside class="sidebar">.*?'
+        r'<form class="sidebar-logout" method="post" action="/logout">.*?'
+        r'<button class="sidebar-logout__button" type="submit">.*?Đăng xuất',
         page,
         re.DOTALL,
     )
     csrf_token = re.search(
-        r'<form method="post" action="/logout">.*?'
+        r'<form class="sidebar-logout".*?'
         r'name="csrf_token"[^>]*value="([^"]+)"',
         page,
         re.DOTALL,
@@ -136,12 +135,12 @@ def test_logout_clears_session_and_redirects_to_login(client):
     assert "Đăng xuất thành công." in login_page
 
 
-def test_account_menu_uses_post_form_for_logout(client):
+def test_sidebar_logout_replaces_account_menu_items(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
 
     page = client.get("/").get_data(as_text=True)
 
-    assert "Thông tin tài khoản" in page
+    assert "Thông tin tài khoản" not in page
     assert page.count("Đăng xuất") == 1
     assert 'method="post" action="/logout"' in page
 

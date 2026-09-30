@@ -1,194 +1,31 @@
-:root {
-  color-scheme: light;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-  color: #172033;
-  background: #eef3f8;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  min-width: 320px;
-  min-height: 100vh;
-  margin: 0;
-  background:
-    radial-gradient(circle at 15% 20%, rgba(30, 119, 184, 0.16), transparent 30rem),
-    linear-gradient(145deg, #f8fbfd, #e7eef5);
-}
-
-.page-shell {
-  display: grid;
-  min-height: 100vh;
-  place-items: center;
-  padding: 24px;
-}
-
-.auth-card {
-  width: min(100%, 430px);
-  padding: 36px;
-  border: 1px solid #d8e1ea;
-  border-radius: 18px;
-  background: #ffffff;
-  box-shadow: 0 18px 55px rgba(24, 55, 85, 0.12);
-}
-
-.eyebrow {
-  margin: 0 0 8px;
-  color: #2577ac;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-h1 {
-  margin: 0;
-  color: #132238;
-  font-size: clamp(1.8rem, 7vw, 2.35rem);
-  line-height: 1.15;
-}
-
-.intro {
-  margin: 12px 0 28px;
-  color: #5d6b7c;
-  line-height: 1.55;
-}
-
-.field {
-  margin-bottom: 20px;
-}
-
-label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 650;
-}
-
-input {
-  width: 100%;
-  min-height: 46px;
-  padding: 10px 12px;
-  border: 1px solid #bac7d5;
-  border-radius: 9px;
-  background: #ffffff;
-  color: #172033;
-  font: inherit;
-  outline: none;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
-}
-
-input:focus {
-  border-color: #2479b5;
-  box-shadow: 0 0 0 3px rgba(36, 121, 181, 0.16);
-}
-
-input[aria-invalid="true"] {
-  border-color: #b42318;
-}
-
-.field-error {
-  margin: 7px 0 0;
-  color: #b42318;
-  font-size: 0.9rem;
-}
-
-.alert {
-  margin: 20px 0;
-  padding: 12px 14px;
-  border-radius: 9px;
-  line-height: 1.45;
-}
-
-.alert-error {
-  border: 1px solid #f0b8b3;
-  background: #fff1f0;
-  color: #8a1c13;
-}
-
-.alert-success {
-  border: 1px solid #acdcbc;
-  background: #edf9f1;
-  color: #17663a;
-}
-
-button {
-  width: 100%;
-  min-height: 48px;
-  border: 0;
-  border-radius: 9px;
-  background: #176fa8;
-  color: #ffffff;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 700;
-}
-
-button:hover {
-  background: #125d8e;
-}
-
-button:focus-visible {
-  outline: 3px solid rgba(23, 111, 168, 0.3);
-  outline-offset: 3px;
-}
-
-.auth-switch {
-  margin: 22px 0 0;
-  color: #647386;
-  font-size: 0.92rem;
-  text-align: center;
-}
-
-.auth-switch a {
-  color: #176fa8;
-  font-weight: 750;
-  text-decoration: none;
-}
-
-.auth-switch a:hover {
-  text-decoration: underline;
-}
-
-.auth-switch a:focus-visible {
-  border-radius: 3px;
-  outline: 3px solid rgba(23, 111, 168, 0.25);
-  outline-offset: 3px;
-}
-
-.success-card {
-  text-align: center;
-}
-
-.success-mark {
-  display: grid;
-  width: 58px;
-  height: 58px;
-  margin: 0 auto 20px;
-  place-items: center;
-  border-radius: 50%;
-  background: #def7e7;
-  color: #15703d;
-  font-size: 1.8rem;
-  font-weight: 800;
-}
-
-.account-email {
-  margin: 0;
-  color: #176fa8;
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
+:root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172033; background: #eef3f8; }
+* { box-sizing: border-box; }
+body { min-width: 320px; min-height: 100vh; margin: 0; background: radial-gradient(circle at 15% 20%, rgba(30, 119, 184, 0.16), transparent 30rem), linear-gradient(145deg, #f8fbfd, #e7eef5); }
+.page-shell { display: grid; min-height: 100vh; place-items: center; padding: 24px; }
+.auth-card { width: min(100%, 430px); padding: 36px; border: 1px solid #d8e1ea; border-radius: 18px; background: #ffffff; box-shadow: 0 18px 55px rgba(24, 55, 85, 0.12); }
+.eyebrow { margin: 0 0 8px; color: #2577ac; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+h1 { margin: 0; color: #132238; font-size: clamp(1.8rem, 7vw, 2.35rem); line-height: 1.15; }
+.intro { margin: 12px 0 28px; color: #5d6b7c; line-height: 1.55; }
+.field { margin-bottom: 20px; }
+label { display: block; margin-bottom: 8px; font-weight: 650; }
+input { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid #bac7d5; border-radius: 9px; background: #ffffff; color: #172033; font: inherit; outline: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
+input:focus { border-color: #2479b5; box-shadow: 0 0 0 3px rgba(36, 121, 181, 0.16); }
+input[aria-invalid="true"] { border-color: #b42318; }
+.field-error { margin: 7px 0 0; color: #b42318; font-size: 0.9rem; }
+.alert { margin: 20px 0; padding: 12px 14px; border-radius: 9px; line-height: 1.45; }
+.alert-error { border: 1px solid #f0b8b3; background: #fff1f0; color: #8a1c13; }
+.alert-success { border: 1px solid #acdcbc; background: #edf9f1; color: #17663a; }
+button { width: 100%; min-height: 48px; border: 0; border-radius: 9px; background: #176fa8; color: #ffffff; cursor: pointer; font: inherit; font-weight: 700; }
+button:hover { background: #125d8e; }
+button:focus-visible { outline: 3px solid rgba(23, 111, 168, 0.3); outline-offset: 3px; }
+.auth-switch { margin: 22px 0 0; color: #647386; font-size: 0.92rem; text-align: center; }
+.auth-switch a { color: #176fa8; font-weight: 750; text-decoration: none; }
+.auth-switch a:hover { text-decoration: underline; }
+.auth-switch a:focus-visible { border-radius: 3px; outline: 3px solid rgba(23, 111, 168, 0.25); outline-offset: 3px; }
+.success-card { text-align: center; }
+.success-mark { display: grid; width: 58px; height: 58px; margin: 0 auto 20px; place-items: center; border-radius: 50%; background: #def7e7; color: #15703d; font-size: 1.8rem; font-weight: 800; }
+.account-email { margin: 0; color: #176fa8; font-weight: 700; overflow-wrap: anywhere; }
 @media (max-width: 520px) {
-  .page-shell {
-    padding: 16px;
-  }
-
-  .auth-card {
-    padding: 26px 22px;
-    border-radius: 14px;
-  }
+.page-shell { padding: 16px; }
+.auth-card { padding: 26px 22px; border-radius: 14px; }
 }
