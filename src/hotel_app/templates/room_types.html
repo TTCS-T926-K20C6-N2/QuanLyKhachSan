@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Thể loại phòng | Hotel Management{% endblock %}
+
+{% block content %}
+  <section class="page-heading" aria-labelledby="room-types-title">
+    <div>
+      <p class="page-kicker">Quản lý phòng</p>
+      <h1 id="room-types-title">Thể loại phòng</h1>
+      <p class="page-description">Tìm kiếm và xem danh sách phòng theo từng thể loại.</p>
+    </div>
+    <a class="action-button action-button--primary room-type-add" href="#" aria-disabled="true">
+      <span aria-hidden="true">+</span> Thêm thể loại phòng
+    </a>
+  </section>
+
+  <section class="dashboard-panel room-types-page" aria-labelledby="room-search-title">
+    <header class="panel-header">
+      <div>
+        <h2 id="room-search-title">Tìm kiếm phòng</h2>
+        <p>Chọn một thể loại để xem các phòng phù hợp.</p>
+      </div>
+    </header>
+
+    <form class="room-type-search" method="get" action="{{ url_for('room_types') }}">
+      <div class="room-type-search__field">
+        <label for="room-type-filter">Thể loại phòng</label>
+        <select id="room-type-filter" name="room_type">
+          {% for room_type in room_type_options %}
+            <option value="{{ room_type }}"{% if room_type == selected_type %} selected{% endif %}>
+              {{ room_type }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="action-button action-button--primary room-type-search__submit" type="submit">
+        Tìm kiếm
+      </button>
+    </form>
+  </section>
+
+  <section class="dashboard-panel room-type-results" aria-labelledby="room-results-title">
+    <header class="panel-header">
+      <div>
+        <h2 id="room-results-title">Danh sách phòng</h2>
+        <p>
+          {% if selected_type == "Tất cả" %}
+            Tất cả thể loại phòng
+          {% else %}
+            {{ selected_type }}
+          {% endif %}
+          <span class="result-count">{{ filtered_rooms|length }} phòng</span>
+        </p>
+      </div>
+    </header>
+
+    {% if filtered_rooms %}
+      <div class="room-type-results__grid">
+        {% for room in filtered_rooms %}
+          <article class="room-type-result-card">
+            <div class="room-type-result-card__top">
+              <strong>Phòng {{ room.number }}</strong>
+              <span class="room-status room-status--empty">Phòng trống</span>
+            </div>
+            <p>{{ room.type }}</p>
+            <small>{{ room.floor }}</small>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="room-type-empty">Không có phòng nào thuộc thể loại này.</p>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -23,6 +23,27 @@ REGISTER_SUCCESS_MESSAGE = "Tạo tài khoản thành công. Vui lòng đăng nh
 DEVELOPMENT_DEMO_EMAIL = "demo@example.test"
 DEVELOPMENT_DEMO_PASSWORD = "Demo1@Hotel2026"
 TRUE_VALUES = {"1", "true", "yes", "on"}
+ROOM_TYPE_OPTIONS = (
+    "Tất cả",
+    "Phòng tiêu chuẩn",
+    "Phòng 2 giường đơn",
+    "Phòng 1 giường đôi",
+    "Phòng vip",
+)
+ROOMS = (
+    {"number": "101", "floor": "Tầng 1", "type": "Phòng tiêu chuẩn"},
+    {"number": "102", "floor": "Tầng 1", "type": "Phòng 2 giường đơn"},
+    {"number": "103", "floor": "Tầng 1", "type": "Phòng tiêu chuẩn"},
+    {"number": "104", "floor": "Tầng 1", "type": "Phòng vip"},
+    {"number": "201", "floor": "Tầng 2", "type": "Phòng 1 giường đôi"},
+    {"number": "202", "floor": "Tầng 2", "type": "Phòng tiêu chuẩn"},
+    {"number": "203", "floor": "Tầng 2", "type": "Phòng vip"},
+    {"number": "204", "floor": "Tầng 2", "type": "Phòng 2 giường đơn"},
+    {"number": "301", "floor": "Tầng 3", "type": "Phòng tiêu chuẩn"},
+    {"number": "302", "floor": "Tầng 3", "type": "Phòng vip"},
+    {"number": "303", "floor": "Tầng 3", "type": "Phòng 1 giường đôi"},
+    {"number": "304", "floor": "Tầng 3", "type": "Phòng tiêu chuẩn"},
+)
 
 
 def _environment(test_config: dict[str, Any] | None) -> str:
@@ -228,6 +249,29 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if user is None:
             return redirect(url_for("login"))
         return render_template("home.html", user=user)
+
+    @app.route("/room-types")
+    def room_types():
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        selected_type = request.args.get("room_type", "Tất cả")
+        if selected_type not in ROOM_TYPE_OPTIONS:
+            selected_type = "Tất cả"
+
+        filtered_rooms = (
+            ROOMS
+            if selected_type == "Tất cả"
+            else tuple(room for room in ROOMS if room["type"] == selected_type)
+        )
+        return render_template(
+            "room_types.html",
+            user=user,
+            room_type_options=ROOM_TYPE_OPTIONS,
+            selected_type=selected_type,
+            filtered_rooms=filtered_rooms,
+        )
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(_error: CSRFError):
