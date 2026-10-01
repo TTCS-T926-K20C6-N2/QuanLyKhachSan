@@ -357,26 +357,11 @@ def _migrate_legacy_room_session() -> None:
     session.pop("room_floors", None)
 
 
-def _room_floor_groups() -> list[dict[str, Any]]:
+def _rooms_for_management() -> list[Room]:
     _migrate_legacy_room_session()
-    rooms = db.session.execute(db.select(Room)).scalars().all()
-    floor_order = {floor["name"]: index for index, floor in enumerate(ROOM_FLOORS)}
-    rooms.sort(
-        key=lambda room: (
-            floor_order.get(room.floor, len(floor_order)),
-            room.floor,
-            room.position,
-            room.id,
-        )
-    )
-
-    grouped_rooms: dict[str, list[Room]] = {}
-    for room in rooms:
-        grouped_rooms.setdefault(room.floor, []).append(room)
-    return [
-        {"name": floor, "rooms": floor_rooms}
-        for floor, floor_rooms in grouped_rooms.items()
-    ]
+    return db.session.execute(
+        db.select(Room).order_by(Room.number.asc(), Room.id.asc())
+    ).scalars().all()
 
 
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
@@ -475,6 +460,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     session.clear()
                     session["user_id"] = user.id
                     session.permanent = True
+                    flash("Đăng nhập thành công", "login_success")
                     return redirect(url_for("home"))
 
                 session.pop("user_id", None)
@@ -544,11 +530,16 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
-        return redirect(url_for("room_management"))
+        rooms = _rooms_for_management()
+        return render_template(
+            "home.html",
+            user=user,
+            rooms=rooms,
+            room_count=len(rooms),
+        )
 
     def render_room_management(user: User | None, **form_context):
-        floors = _room_floor_groups()
-        room_count = sum(len(floor["rooms"]) for floor in floors)
+        rooms = _rooms_for_management()
         context = {
             "errors": {},
             "room_number": "",
@@ -562,10 +553,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         }
         context.update(form_context)
         return render_template(
-            "home.html",
+            "room_management.html",
             user=user,
-            floors=floors,
-            room_count=room_count,
+            rooms=rooms,
+            room_count=len(rooms),
             **context,
         )
 
@@ -771,6 +762,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 for code, label in available_room_types.items()
                 if label == room.type
             ]
+            room_defaults = next(
+                (defaults for defaults in ROOM_TYPE_CATALOG if defaults["name"] == room.type),
+                None,
+            )
+            if room_defaults is not None:
+                if room.price <= 0:
+                    price_input = str(room_defaults["price"])
+                if not room.description:
+                    description = room_defaults["description"]
 
         if request.method == "POST":
             existing_numbers = {
@@ -958,17 +958,48 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         flash("Đăng xuất thành công.", "success")
         return redirect(url_for("login"))
 
+    def room_type_page_context() -> dict[str, Any]:
+        stored_room_types = db.session.execute(
+            db.select(RoomType).order_by(RoomType.id)
+        ).scalars().all()
+        stored_room_types_names = db.session.execute(
+            db.select(Room.type)
+        ).scalars().all()
+        room_counts: dict[str, int] = {}
+        for room_type_name in stored_room_types_names:
+            normalized_name = (room_type_name or "").strip().casefold()
+            room_counts[normalized_name] = room_counts.get(normalized_name, 0) + 1
+
+        search_query = request.args.get("q", "").strip()
+        normalized_query = search_query.casefold()
+        visible_room_types = [
+            room_type
+            for room_type in stored_room_types
+            if normalized_query in room_type.name.strip().casefold()
+        ]
+        return {
+            "room_types": visible_room_types,
+            "room_type_count": len(stored_room_types),
+            "room_count": len(stored_room_types_names),
+            "used_room_type_count": sum(
+                room_counts.get(room_type.name.strip().casefold(), 0) > 0
+                for room_type in stored_room_types
+            ),
+            "room_type_counts": {
+                room_type.id: room_counts.get(room_type.name.strip().casefold(), 0)
+                for room_type in stored_room_types
+            },
+            "search_query": search_query,
+        }
+
     @app.route("/room-types")
     def room_types():
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
 
-        stored_room_types = db.session.execute(
-            db.select(RoomType).order_by(RoomType.id)
-        ).scalars().all()
         return render_template(
-            "room_types.html", user=user, room_types=stored_room_types
+            "room_types.html", user=user, **room_type_page_context()
         )
 
     @app.route("/room-types/new", methods=["GET", "POST"])
@@ -1023,14 +1054,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     flash("Thêm thể loại phòng thành công.", "success")
                     return redirect(url_for("room_types"))
 
-        stored_room_types = db.session.execute(
-            db.select(RoomType).order_by(RoomType.id)
-        ).scalars().all()
         return (
             render_template(
                 "room_types.html",
                 user=user,
-                room_types=stored_room_types,
+                **room_type_page_context(),
                 create_room_type=True,
                 form_values=form_values,
                 errors=errors,
@@ -1134,14 +1162,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     flash("Cập nhật loại phòng thành công.", "success")
                     return redirect(url_for("room_types"))
 
-        stored_room_types = db.session.execute(
-            db.select(RoomType).order_by(RoomType.id)
-        ).scalars().all()
         return (
             render_template(
                 "room_types.html",
                 user=user,
-                room_types=stored_room_types,
+                **room_type_page_context(),
                 edit_room_type=room_type,
                 form_values=form_values,
                 errors=errors,
@@ -1154,14 +1179,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     def handle_csrf_error(_error: CSRFError):
         if request.endpoint == "create_room_type":
             user = current_user()
-            stored_room_types = db.session.execute(
-                db.select(RoomType).order_by(RoomType.id)
-            ).scalars().all()
             return (
                 render_template(
                     "room_types.html",
                     user=user,
-                    room_types=stored_room_types,
+                    **room_type_page_context(),
                     create_room_type=True,
                     form_values={
                         "name": request.form.get("name", ""),
@@ -1180,14 +1202,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             )
         if request.endpoint == "delete_room_type":
             user = current_user()
-            stored_room_types = db.session.execute(
-                db.select(RoomType).order_by(RoomType.id)
-            ).scalars().all()
             return (
                 render_template(
                     "room_types.html",
                     user=user,
-                    room_types=stored_room_types,
+                    **room_type_page_context(),
                     service_error=(
                         "Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
                     ),

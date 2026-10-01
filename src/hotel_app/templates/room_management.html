@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Danh sách phòng | Hotel Management{% endblock %}
+
+{% block content %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      {% if category != 'login_success' %}
+        <div class="form-alert form-alert--{{ category }}" role="status">{{ message }}</div>
+      {% endif %}
+    {% endfor %}
+  {% endwith %}
+
+  <section id="room-list" class="dashboard-panel" aria-labelledby="room-list-title">
+    <header class="panel-header">
+      <div>
+        <h2 id="room-list-title">Danh sách phòng</h2>
+        <p>{{ room_count }} phòng · Chọn màu để nhận biết trạng thái phòng</p>
+      </div>
+      <div class="panel-header__actions">
+        <div class="room-legend" aria-label="Chú thích trạng thái phòng">
+          <span class="legend-item"><span class="legend-dot legend-dot--empty"></span>Phòng trống</span>
+          <span class="legend-item"><span class="legend-dot legend-dot--occupied"></span>Đang thuê</span>
+        </div>
+        <a class="action-button action-button--primary" id="open-room-dialog" href="{{ url_for('create_room') }}">
+          <span aria-hidden="true">+</span> Thêm phòng
+        </a>
+      </div>
+    </header>
+
+    <div class="room-list">
+      <div class="room-grid">
+        {% for room in rooms %}
+          <article
+            class="room-card room-card--{{ room.state }}"
+            aria-label="Phòng {{ room.number }}, {{ room.status }}"
+          >
+            <div class="room-card__top">
+              <strong class="room-number">{{ room.number }}</strong>
+              <span class="room-status room-status--{{ room.state }}">{{ room.status }}</span>
+            </div>
+            {% set default_room_images = {
+              'Phòng đơn': 'images/room-single.jpg',
+              'Phòng đôi': 'images/room-double.jpg',
+              'Phòng VIP': 'images/room-vip.jpg'
+            } %}
+            {% set room_image_url = url_for('room_image', filename=room.image) if room.image else url_for('static', filename=default_room_images.get(room.type, 'images/room-double.jpg')) %}
+            <img class="room-image" src="{{ room_image_url }}" alt="Ảnh phòng {{ room.number }}">
+            <p class="room-type">{{ room.type }}</p>
+            <p class="room-description">{{ room.description or "—" }}</p>
+            <p class="room-price">{% if room.price > 0 %}{{ "{:,.0f}".format(room.price) }} VNĐ / đêm{% else %}—{% endif %}</p>
+            <dl class="room-times">
+              <div>
+                <dt>Giờ vào</dt>
+                <dd>{{ room.check_in or "—" }}</dd>
+              </div>
+              <div>
+                <dt>Giờ ra</dt>
+                <dd>{{ room.check_out or "—" }}</dd>
+              </div>
+            </dl>
+            <div class="room-actions">
+              <a class="action-button action-button--edit" href="{{ url_for('edit_room', room_number=room.number) }}">
+                Cập nhật
+              </a>
+              <form
+                method="post"
+                action="{{ url_for('delete_room', room_number=room.number) }}"
+                class="room-card__delete"
+                onsubmit="return confirm('Bạn có chắc muốn xóa phòng {{ room.number }}?');"
+              >
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="action-button action-button--delete" aria-label="Xóa phòng {{ room.number }}">
+                  Xóa phòng
+                </button>
+              </form>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <dialog class="room-dialog" id="room-dialog" aria-labelledby="room-dialog-title"{% if room_modal_open %} data-open-on-load{% endif %}>
+    <header class="room-dialog__header">
+      <div>
+        <p class="page-kicker">Quản lý phòng</p>
+        <h2 id="room-dialog-title">Thêm phòng mới</h2>
+        <p class="room-dialog__subtitle">Trạng thái ban đầu: Phòng trống</p>
+      </div>
+      <button class="room-dialog__close" id="close-room-dialog" type="button" aria-label="Đóng" title="Đóng">
+        <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+      </button>
+    </header>
+    {% if service_error %}<div class="form-alert form-alert--error room-dialog__alert" role="alert">{{ service_error }}</div>{% endif %}
+    {% include "room_form_fields.html" %}
+  </dialog>
+
+  <script>
+    const roomDialog = document.getElementById("room-dialog");
+    document.getElementById("open-room-dialog").addEventListener("click", (event) => {
+      event.preventDefault();
+      roomDialog.showModal();
+    });
+    document.getElementById("close-room-dialog").addEventListener("click", () => {
+      roomDialog.close();
+    });
+    document.getElementById("cancel-room-dialog").addEventListener("click", () => {
+      roomDialog.close();
+    });
+    if (roomDialog.hasAttribute("data-open-on-load")) {
+      roomDialog.showModal();
+    }
+  </script>
+
+{% endblock %}

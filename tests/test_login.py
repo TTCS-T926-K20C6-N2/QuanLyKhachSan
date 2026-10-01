@@ -11,7 +11,7 @@ from hotel_app.app import (
     create_app,
 )
 from hotel_app.extensions import db
-from hotel_app.models import User, normalize_email
+from hotel_app.models import Room, User, normalize_email
 
 from conftest import DEMO_EMAIL, DEMO_PASSWORD
 
@@ -47,12 +47,22 @@ def test_valid_credentials_create_session_and_redirect_home(client):
         assert isinstance(stored_session["user_id"], int)
 
     home = client.get("/")
-    assert home.status_code == 302
-    assert home.headers["Location"].endswith("/rooms")
+    assert home.status_code == 200
+    home_html = home.get_data(as_text=True)
+    assert "<title>Trang chủ | Hotel Management</title>" in home_html
+    assert 'class="page-heading"' not in home_html
+    assert '<h2 id="home-room-list-title">Danh sách phòng</h2>' in home_html
+    assert 'class="room-card room-card--empty home-room-card"' in home_html
+    assert "Cập nhật" not in home_html
+    assert "Xóa phòng" not in home_html
+    assert home_html.count("Đăng nhập thành công") == 1
+
+    refreshed_home = client.get("/").get_data(as_text=True)
+    assert "Đăng nhập thành công" not in refreshed_home
 
     room_management = client.get("/rooms")
     assert room_management.status_code == 200
-    assert "Đăng nhập thành công" in room_management.get_data(as_text=True)
+    assert "Đăng nhập thành công" not in room_management.get_data(as_text=True)
 
 
 def test_wrong_password_returns_generic_error_without_auth_session(client):
@@ -92,6 +102,94 @@ def test_home_redirects_unauthenticated_user_to_login(client):
 
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/login")
+
+
+def test_login_success_flash_is_one_time_and_reappears_after_a_new_login(client):
+    assert _login(client, DEMO_EMAIL, DEMO_PASSWORD).status_code == 302
+    assert "Đăng nhập thành công" in client.get("/").get_data(as_text=True)
+
+    room_page = client.get("/rooms").get_data(as_text=True)
+    assert "Đăng nhập thành công" not in room_page
+    logout_token = re.search(
+        r'<form class="sidebar-logout".*?'
+        r'name="csrf_token"[^>]*value="([^"]+)"',
+        room_page,
+        re.DOTALL,
+    )
+    assert logout_token is not None
+    assert client.post(
+        "/logout", data={"csrf_token": logout_token.group(1)}
+    ).status_code == 302
+
+    assert _login(client, DEMO_EMAIL, DEMO_PASSWORD).status_code == 302
+    home = client.get("/").get_data(as_text=True)
+    assert home.count("Đăng nhập thành công") == 1
+    assert "Đăng nhập thành công" not in client.get("/").get_data(as_text=True)
+
+
+def test_home_lists_sqlite_rooms_with_current_status_and_times(client, app):
+    assert _login(client, DEMO_EMAIL, DEMO_PASSWORD).status_code == 302
+    with app.app_context():
+        rented_room = db.session.execute(
+            db.select(Room).where(Room.number == "102")
+        ).scalar_one()
+        rented_room.status = "Đang thuê"
+        rented_room.state = "occupied"
+        rented_room.check_in = "14:30"
+        rented_room.check_out = "11:00"
+        db.session.commit()
+        expected_numbers = db.session.execute(
+            db.select(Room.number).order_by(Room.number.asc())
+        ).scalars().all()
+
+    html = client.get("/").get_data(as_text=True)
+    displayed_numbers = re.findall(
+        r'<strong class="room-number">([^<]+)</strong>', html
+    )
+
+    assert displayed_numbers == expected_numbers
+    assert html.count('class="room-card room-card--') == len(expected_numbers) == 12
+    assert 'class="room-card room-card--empty home-room-card"' in html
+    assert 'class="room-card room-card--occupied home-room-card"' in html
+    assert 'aria-label="Phòng 102, Đang thuê"' in html
+    assert "14:30" in html
+    assert "11:00" in html
+    assert html.count("<dd>—</dd>") == 22
+    assert "Cập nhật" not in html
+    assert "Xóa phòng" not in html
+
+
+def test_home_shows_empty_state_when_database_has_no_rooms(client, app):
+    assert _login(client, DEMO_EMAIL, DEMO_PASSWORD).status_code == 302
+    with app.app_context():
+        db.session.execute(db.delete(Room))
+        db.session.commit()
+
+    html = client.get("/").get_data(as_text=True)
+
+    assert "0 phòng" in html
+    assert 'class="room-empty-state"' in html
+    assert "Danh sách phòng đang trống." in html
+    assert 'class="room-card ' not in html
+
+
+def test_sidebar_has_three_ordered_links_and_correct_active_state(client):
+    assert _login(client, DEMO_EMAIL, DEMO_PASSWORD).status_code == 302
+    home = client.get("/").get_data(as_text=True)
+    room_management = client.get("/rooms").get_data(as_text=True)
+    room_types = client.get("/room-types").get_data(as_text=True)
+
+    home_nav = home.split('<nav class="sidebar-nav"', 1)[1].split("</nav>", 1)[0]
+    assert home_nav.index('href="/"') < home_nav.index('href="/rooms"')
+    assert home_nav.index('href="/rooms"') < home_nav.index('href="/room-types"')
+    assert 'href="/" aria-current="page"' in home_nav
+    assert 'href="/rooms" aria-current="page"' not in home_nav
+    assert 'href="/room-types" aria-current="page"' not in home_nav
+    assert 'class="page-heading"' not in home
+    assert 'class="page-heading"' not in room_management
+    assert 'class="page-heading"' not in room_types
+    assert 'href="/rooms" aria-current="page"' in room_management
+    assert 'href="/room-types" aria-current="page"' in room_types
 
 
 def test_account_page_is_disabled(client):
@@ -169,7 +267,9 @@ def test_authenticated_session_contains_no_password_data(client):
         assert "email" not in stored_session
         assert "password" not in stored_session
         assert "password_hash" not in stored_session
-        assert set(stored_session).issubset({"user_id", "csrf_token", "_permanent"})
+        assert set(stored_session).issubset(
+            {"user_id", "csrf_token", "_permanent", "_flashes"}
+        )
 
 
 def test_user_persists_when_application_is_recreated(tmp_path):

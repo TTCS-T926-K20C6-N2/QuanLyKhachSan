@@ -3,17 +3,6 @@
 {% block title %}Thể loại phòng | Hotel Management{% endblock %}
 
 {% block content %}
-  <section class="page-heading" aria-labelledby="room-types-title">
-    <div>
-      <p class="page-kicker">Danh mục phòng</p>
-      <h1 id="room-types-title">Quản lý Thể loại phòng</h1>
-      <p class="page-description">Danh sách các thể loại phòng hiện có.</p>
-    </div>
-    <a class="action-button action-button--primary room-type-add" href="{{ url_for('create_room_type') }}">
-      <span aria-hidden="true">+</span> Thêm thể loại phòng
-    </a>
-  </section>
-
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for category, message in messages %}
       <p class="form-alert{% if category == 'error' %} form-alert--error{% endif %}" role="status">{{ message }}</p>
@@ -95,9 +84,42 @@
     <header class="panel-header">
       <div>
         <h2 id="room-types-table-title">Danh sách thể loại phòng</h2>
-        <p>{{ room_types|length }} thể loại phòng</p>
+        <p>{{ room_types|length }} thể loại hiển thị</p>
       </div>
+      <a class="action-button action-button--primary room-type-add" href="{{ url_for('create_room_type') }}">
+        <span aria-hidden="true">+</span> Thêm thể loại phòng
+      </a>
     </header>
+
+    <div class="room-type-stats" aria-label="Thống kê thể loại phòng">
+      <article class="room-type-stat">
+        <span>Tổng thể loại</span>
+        <strong data-stat="total-room-types">{{ room_type_count }}</strong>
+      </article>
+      <article class="room-type-stat">
+        <span>Tổng phòng</span>
+        <strong data-stat="total-rooms">{{ room_count }}</strong>
+      </article>
+      <article class="room-type-stat">
+        <span>Đang sử dụng</span>
+        <strong data-stat="used-room-types">{{ used_room_type_count }}</strong>
+      </article>
+    </div>
+
+    <form class="room-type-search" method="get" action="{{ url_for('room_types') }}" role="search">
+      <div class="room-type-search__field">
+        <label class="visually-hidden" for="room-type-query">Tìm kiếm tên thể loại phòng</label>
+        <input
+          class="room-type-search__input"
+          id="room-type-query"
+          name="q"
+          type="search"
+          value="{{ search_query }}"
+          placeholder="Tìm kiếm tên thể loại phòng..."
+        >
+      </div>
+      <button class="action-button action-button--primary room-type-search__submit" type="submit">Tìm kiếm</button>
+    </form>
 
     <div class="room-type-table-wrap">
       <table class="room-type-table">
@@ -105,6 +127,7 @@
           <tr>
             <th scope="col">STT</th>
             <th scope="col">Tên thể loại phòng</th>
+            <th scope="col">Số phòng</th>
             <th scope="col">Hành động</th>
           </tr>
         </thead>
@@ -113,6 +136,7 @@
             <tr>
               <td>{{ loop.index }}</td>
               <td><strong>{{ room_type.name }}</strong></td>
+              <td class="room-type-count">{{ room_type_counts[room_type.id] }}</td>
               <td>
                 <div class="table-actions">
                   <a class="action-button action-button--edit" href="{{ url_for('edit_room_type', room_type_id=room_type.id) }}">Cập nhật</a>
@@ -123,7 +147,13 @@
                 </div>
               </td>
             </tr>
-        {% endfor %}
+          {% else %}
+            <tr>
+              <td class="room-type-empty" colspan="4">
+                {% if search_query %}Không tìm thấy thể loại phòng phù hợp.{% else %}Chưa có thể loại phòng nào.{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
         </tbody>
       </table>
     </div>

@@ -110,11 +110,15 @@
       <aside class="sidebar">
         <nav class="sidebar-nav" aria-label="Điều hướng chính">
           <div class="nav-section">
-            <a class="nav-link{% if request.endpoint in ['room_management', 'create_room'] %} nav-link--active{% endif %}" href="{{ url_for('room_management') }}"{% if request.endpoint in ['room_management', 'create_room'] %} aria-current="page"{% endif %}>
+            <a class="nav-link{% if request.endpoint == 'home' %} nav-link--active{% endif %}" href="{{ url_for('home') }}"{% if request.endpoint == 'home' %} aria-current="page"{% endif %}>
+              <svg class="icon"><use href="#icon-home"></use></svg>
+              <span>Trang chủ</span>
+            </a>
+            <a class="nav-link{% if request.endpoint in ['room_management', 'create_room', 'edit_room', 'delete_room'] %} nav-link--active{% endif %}" href="{{ url_for('room_management') }}"{% if request.endpoint in ['room_management', 'create_room', 'edit_room', 'delete_room'] %} aria-current="page"{% endif %}>
               <svg class="icon"><use href="#icon-rooms"></use></svg>
               <span>Quản lý phòng</span>
             </a>
-            <a class="nav-link{% if request.endpoint == 'room_types' %} nav-link--active{% endif %}" href="{{ url_for('room_types') }}"{% if request.endpoint == 'room_types' %} aria-current="page"{% endif %}>
+            <a class="nav-link{% if request.endpoint in ['room_types', 'create_room_type', 'edit_room_type', 'delete_room_type'] %} nav-link--active{% endif %}" href="{{ url_for('room_types') }}"{% if request.endpoint in ['room_types', 'create_room_type', 'edit_room_type', 'delete_room_type'] %} aria-current="page"{% endif %}>
               <svg class="icon"><use href="#icon-report"></use></svg>
               <span>Thể loại phòng</span>
             </a>
