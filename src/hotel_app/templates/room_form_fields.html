@@ -1,0 +1,53 @@
+<form class="room-form" method="post" action="{{ url_for('create_room') }}" enctype="multipart/form-data" novalidate>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="modal_form" value="{{ '1' if modal_form else '0' }}">
+
+  <div class="room-form__grid">
+    <div class="form-field">
+      <label for="room-number">Mã phòng</label>
+      <input id="room-number" name="room_number" type="text" value="{{ room_number }}" maxlength="20" pattern="[A-Za-z0-9_-]+" required aria-describedby="room-number-error">
+      {% if errors.get('room_number') %}<small class="field-error" id="room-number-error">{{ errors.room_number }}</small>{% endif %}
+    </div>
+
+    <div class="form-field">
+      <label for="room-price">Giá thuê / đêm (VNĐ)</label>
+      <input id="room-price" name="price" type="number" value="{{ price }}" min="1" step="1" required aria-describedby="room-price-error">
+      {% if errors.get('price') %}<small class="field-error" id="room-price-error">{{ errors.price }}</small>{% endif %}
+    </div>
+
+    <fieldset class="form-field room-type-options">
+      <legend>Thể loại phòng</legend>
+      <div class="checkbox-options">
+        {% for code, label in room_types.items() %}
+          <label class="checkbox-option">
+            <input type="checkbox" name="room_type" value="{{ code }}"{% if loop.first %} required{% endif %}{% if code in selected_types %} checked{% endif %}>
+            <span>{{ label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      {% if errors.get('room_type') %}<small class="field-error">{{ errors.room_type }}</small>{% endif %}
+    </fieldset>
+
+    <div class="form-field form-field--wide">
+      <label for="room-description">Mô tả ngắn</label>
+      <textarea id="room-description" name="description" rows="3" maxlength="200" required aria-describedby="room-description-error">{{ description }}</textarea>
+      {% if errors.get('description') %}<small class="field-error" id="room-description-error">{{ errors.description }}</small>{% endif %}
+    </div>
+
+    <div class="form-field form-field--wide">
+      <label for="room-image">Hình ảnh phòng</label>
+      <input id="room-image" name="image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required aria-describedby="room-image-help room-image-error">
+      <small id="room-image-help" class="field-hint">JPG, PNG hoặc WEBP, tối đa 5 MB.</small>
+      {% if errors.get('image') %}<small class="field-error" id="room-image-error">{{ errors.image }}</small>{% endif %}
+    </div>
+  </div>
+
+  <div class="room-form__footer">
+    {% if modal_form %}
+      <button class="action-button" id="cancel-room-dialog" type="button">Hủy</button>
+    {% else %}
+      <a class="action-button" href="{{ url_for('room_management') }}">Hủy</a>
+    {% endif %}
+    <button class="action-button action-button--primary" type="submit">Thêm phòng</button>
+  </div>
+</form>

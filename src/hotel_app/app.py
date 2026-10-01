@@ -9,9 +9,10 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, redirect, render_template, request, send_from_directory, session, url_for
 from flask_wtf.csrf import CSRFError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from werkzeug.utils import secure_filename
 
 from .extensions import csrf, db
 from .models import User, normalize_email
@@ -24,6 +25,18 @@ REGISTER_SUCCESS_MESSAGE = "Tạo tài khoản thành công. Vui lòng đăng nh
 DEVELOPMENT_DEMO_EMAIL = "demo@example.test"
 DEVELOPMENT_DEMO_PASSWORD = "Demo1@Hotel2026"
 TRUE_VALUES = {"1", "true", "yes", "on"}
+ROOM_TYPES = {
+    "single": "Phòng đơn",
+    "double": "Phòng đôi",
+    "vip": "Phòng VIP",
+}
+ALLOWED_ROOM_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+ROOM_IMAGE_SIGNATURES = {
+    "jpg": (b"\xff\xd8\xff",),
+    "jpeg": (b"\xff\xd8\xff",),
+    "png": (b"\x89PNG\r\n\x1a\n",),
+    "webp": (b"RIFF",),
+}
 ROOM_FLOORS = (
     {
         "name": "Tầng 1",
@@ -199,6 +212,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             "DATABASE_URL", "sqlite:///hotel.db"
         ),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        MAX_CONTENT_LENGTH=5 * 1024 * 1024 + 64 * 1024,
+        ROOM_UPLOAD_FOLDER=str(INSTANCE_PATH / "uploads"),
         SESSION_COOKIE_NAME="hotel_session",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
@@ -336,12 +351,157 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return redirect(url_for("login"))
         return redirect(url_for("room_management"))
 
+    def render_room_management(user: User | None, **form_context):
+        floors = _session_room_floors()
+        room_count = sum(len(floor["rooms"]) for floor in floors)
+        context = {
+            "errors": {},
+            "room_number": "",
+            "description": "",
+            "price": "",
+            "selected_types": [],
+            "room_types": ROOM_TYPES,
+            "modal_form": True,
+            "room_modal_open": False,
+            "service_error": None,
+        }
+        context.update(form_context)
+        return render_template(
+            "home.html",
+            user=user,
+            floors=floors,
+            room_count=room_count,
+            **context,
+        )
+
     @app.route("/rooms")
     def room_management():
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
-        return render_template("home.html", user=user, floors=_session_room_floors())
+        return render_room_management(user)
+
+    @app.route("/rooms/new", methods=["GET", "POST"])
+    def create_room():
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        errors: dict[str, str] = {}
+        room_number = request.form.get("room_number", "").strip()
+        description = request.form.get("description", "").strip()
+        price_input = request.form.get("price", "").strip()
+        selected_types = request.form.getlist("room_type")
+
+        if request.method == "POST":
+            floors = _session_room_floors()
+            existing_numbers = {
+                str(room.get("number", "")).casefold()
+                for floor in floors
+                for room in floor.get("rooms", [])
+            }
+            if not room_number:
+                errors["room_number"] = "Vui lòng nhập mã phòng."
+            elif len(room_number) > 20 or not all(
+                character.isascii()
+                and (character.isalnum() or character in "-_")
+                for character in room_number
+            ):
+                errors["room_number"] = "Mã phòng tối đa 20 ký tự, chỉ gồm chữ, số, - hoặc _."
+            elif room_number.casefold() in existing_numbers:
+                errors["room_number"] = "Mã phòng đã tồn tại."
+
+            if not description:
+                errors["description"] = "Vui lòng nhập mô tả ngắn."
+            elif len(description) > 200:
+                errors["description"] = "Mô tả không được vượt quá 200 ký tự."
+
+            if len(selected_types) != 1 or selected_types[0] not in ROOM_TYPES:
+                errors["room_type"] = "Vui lòng chọn đúng một thể loại phòng."
+
+            try:
+                price = int(price_input)
+                if price <= 0:
+                    raise ValueError
+            except ValueError:
+                errors["price"] = "Giá thuê phải là số nguyên lớn hơn 0."
+
+            image = request.files.get("image")
+            image_extension = ""
+            image_data = b""
+            if image is None or not image.filename:
+                errors["image"] = "Vui lòng chọn hình ảnh phòng."
+            else:
+                safe_name = secure_filename(image.filename)
+                image_extension = safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else ""
+                image_data = image.read(5 * 1024 * 1024 + 1)
+                signatures = ROOM_IMAGE_SIGNATURES.get(image_extension, ())
+                valid_signature = any(
+                    image_data.startswith(signature) for signature in signatures
+                )
+                if image_extension not in ALLOWED_ROOM_IMAGE_EXTENSIONS or not valid_signature:
+                    errors["image"] = "Ảnh phải có định dạng JPG, PNG hoặc WEBP hợp lệ."
+                elif len(image_data) > 5 * 1024 * 1024:
+                    errors["image"] = "Ảnh không được vượt quá 5 MB."
+                elif image_extension == "webp" and image_data[8:12] != b"WEBP":
+                    errors["image"] = "Ảnh WEBP không hợp lệ."
+
+            if not errors:
+                upload_folder = Path(app.config["ROOM_UPLOAD_FOLDER"])
+                upload_folder.mkdir(parents=True, exist_ok=True)
+                image_name = f"{secrets.token_hex(16)}.{image_extension}"
+                (upload_folder / image_name).write_bytes(image_data)
+
+                new_room = {
+                    "number": room_number,
+                    "type": ROOM_TYPES[selected_types[0]],
+                    "description": description,
+                    "price": price,
+                    "image": image_name,
+                    "status": "Phòng trống",
+                    "state": "empty",
+                    "check_in": None,
+                    "check_out": None,
+                }
+                new_floor = next(
+                    (floor for floor in floors if floor["name"] == "Phòng mới"),
+                    None,
+                )
+                if new_floor is None:
+                    new_floor = {"name": "Phòng mới", "rooms": []}
+                    floors.append(new_floor)
+                new_floor["rooms"].append(new_room)
+                session["room_floors"] = floors
+                flash(f"Đã thêm phòng {room_number}.", "success")
+                return redirect(url_for("room_management"))
+
+        if request.form.get("modal_form") == "1":
+            return render_room_management(
+                user,
+                errors=errors,
+                room_number=room_number,
+                description=description,
+                price=price_input,
+                selected_types=selected_types,
+                room_modal_open=True,
+            )
+
+        return render_template(
+            "room_form.html",
+            user=user,
+            errors=errors,
+            room_number=room_number,
+            description=description,
+            price=price_input,
+            selected_types=selected_types,
+            room_types=ROOM_TYPES,
+        )
+
+    @app.route("/room-images/<path:filename>")
+    def room_image(filename: str):
+        if current_user() is None:
+            return redirect(url_for("login"))
+        return send_from_directory(app.config["ROOM_UPLOAD_FOLDER"], filename)
 
     @app.route("/rooms/<room_number>/delete", methods=["POST"])
     def delete_room(room_number: str):
@@ -358,6 +518,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 if str(room.get("number")) == normalized_number:
                     del rooms[index]
                     session["room_floors"] = floors
+                    image_name = room.get("image")
+                    if image_name and Path(image_name).name == image_name:
+                        (Path(app.config["ROOM_UPLOAD_FOLDER"]) / image_name).unlink(
+                            missing_ok=True
+                        )
                     flash(f"Đã xóa phòng {normalized_number}.", "success")
                     return redirect(url_for("room_management"))
 
@@ -388,8 +553,38 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @app.errorhandler(CSRFError)
     def handle_csrf_error(_error: CSRFError):
         session.pop("user_id", None)
+        if request.endpoint == "create_room":
+            if request.form.get("modal_form") == "1":
+                return (
+                    render_room_management(
+                        None,
+                        room_modal_open=True,
+                        service_error=(
+                            "Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
+                        ),
+                    ),
+                    400,
+                )
+            return (
+                render_template(
+                    "room_form.html",
+                    user=None,
+                    errors={},
+                    room_number="",
+                    description="",
+                    price="",
+                    selected_types=[],
+                    room_types=ROOM_TYPES,
+                    service_error=(
+                        "Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
+                    ),
+                ),
+                400,
+            )
         template_name = (
-            "register.html" if request.endpoint == "register" else "login.html"
+            "register.html" if request.endpoint == "register" else (
+                "room_form.html" if request.endpoint == "create_room" else "login.html"
+            )
         )
         return (
             render_template(
