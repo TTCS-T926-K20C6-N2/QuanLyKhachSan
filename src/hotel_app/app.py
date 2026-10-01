@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import secrets
+from copy import deepcopy
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -169,6 +170,21 @@ def _seed_demo_user(app: Flask) -> None:
     db.session.commit()
 
 
+def _session_room_floors() -> list[dict[str, Any]]:
+    floors = session.get("room_floors")
+    if floors is None:
+        floors = deepcopy(ROOM_FLOORS)
+
+    normalized_floors: list[dict[str, Any]] = []
+    for floor in floors:
+        normalized_floor = dict(floor)
+        normalized_floor["rooms"] = list(floor.get("rooms", ()))
+        normalized_floors.append(normalized_floor)
+
+    session["room_floors"] = normalized_floors
+    return normalized_floors
+
+
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     """Create the small Login application with optional isolated test config."""
 
@@ -325,7 +341,28 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
-        return render_template("home.html", user=user, floors=ROOM_FLOORS)
+        return render_template("home.html", user=user, floors=_session_room_floors())
+
+    @app.route("/rooms/<room_number>/delete", methods=["POST"])
+    def delete_room(room_number: str):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        normalized_number = str(room_number).strip()
+        floors = _session_room_floors()
+
+        for floor in floors:
+            rooms = floor.get("rooms", [])
+            for index, room in enumerate(rooms):
+                if str(room.get("number")) == normalized_number:
+                    del rooms[index]
+                    session["room_floors"] = floors
+                    flash(f"Đã xóa phòng {normalized_number}.", "success")
+                    return redirect(url_for("room_management"))
+
+        flash(f"Không tìm thấy phòng {normalized_number}.", "error")
+        return redirect(url_for("room_management"))
 
     @app.route("/account")
     def account():
