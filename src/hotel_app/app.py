@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.utils import secure_filename
 
 from .extensions import csrf, db
-from .models import RoomType, User, normalize_email
+from .models import RoomType, RoomTypeSeedState, User, normalize_email
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -199,13 +199,24 @@ def _seed_demo_user(app: Flask) -> None:
 
 
 def _seed_room_types() -> None:
+    seed_state = db.session.get(RoomTypeSeedState, 1)
+    if seed_state is not None and seed_state.initialized:
+        return
+
     existing_room_type = db.session.execute(
         db.select(RoomType.id).limit(1)
     ).first()
     if existing_room_type is not None:
+        seed_state = seed_state or RoomTypeSeedState(id=1)
+        seed_state.initialized = True
+        db.session.add(seed_state)
+        db.session.commit()
         return
 
+    seed_state = seed_state or RoomTypeSeedState(id=1)
+    seed_state.initialized = True
     db.session.add_all(RoomType(**room_type) for room_type in ROOM_TYPE_CATALOG)
+    db.session.add(seed_state)
     db.session.commit()
 
 
@@ -728,6 +739,39 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             "room_types.html", user=user, room_types=stored_room_types
         )
 
+    @app.route("/room-types/<int:room_type_id>/delete", methods=["POST"])
+    def delete_room_type(room_type_id: int):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        room_type = db.session.get(RoomType, room_type_id)
+        if room_type is None:
+            flash("Không tìm thấy loại phòng cần xóa.", "error")
+            return redirect(url_for("room_types"))
+
+        room_type_name = room_type.name
+        try:
+            db.session.delete(room_type)
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            flash(
+                f'Không thể xóa thể loại phòng "{room_type_name}" vì đang được sử dụng.',
+                "error",
+            )
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.error("A room type deletion failed.")
+            flash(
+                f'Hệ thống tạm thời không thể xóa thể loại phòng "{room_type_name}". Vui lòng thử lại.',
+                "error",
+            )
+        else:
+            flash(f'Đã xóa thể loại phòng "{room_type_name}" thành công.', "success")
+
+        return redirect(url_for("room_types"))
+
     @app.route("/room-types/<int:room_type_id>/edit", methods=["GET", "POST"])
     def edit_room_type(room_type_id: int):
         user = current_user()
@@ -824,6 +868,22 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(_error: CSRFError):
+        if request.endpoint == "delete_room_type":
+            user = current_user()
+            stored_room_types = db.session.execute(
+                db.select(RoomType).order_by(RoomType.id)
+            ).scalars().all()
+            return (
+                render_template(
+                    "room_types.html",
+                    user=user,
+                    room_types=stored_room_types,
+                    service_error=(
+                        "Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
+                    ),
+                ),
+                400,
+            )
         session.pop("user_id", None)
         if request.endpoint == "create_room":
             if request.form.get("modal_form") == "1":

@@ -109,7 +109,10 @@
               <td>
                 <div class="table-actions">
                   <a class="action-button action-button--edit" href="{{ url_for('edit_room_type', room_type_id=room_type.id) }}">Cập nhật</a>
-                  <button class="action-button action-button--delete" type="button" disabled>Xóa</button>
+                  <form method="post" action="{{ url_for('delete_room_type', room_type_id=room_type.id) }}" onsubmit="return window.confirm(this.dataset.confirm)" data-confirm="Bạn có chắc chắn muốn xóa thể loại phòng: {{ room_type.name }}?">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="action-button action-button--delete" type="submit">Xóa</button>
+                  </form>
                 </div>
               </td>
             </tr>

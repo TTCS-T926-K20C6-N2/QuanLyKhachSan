@@ -40,3 +40,12 @@ class RoomType(db.Model):
     description = db.Column(db.Text, nullable=False, default="")
     status = db.Column(db.String(16), nullable=False, default="active")
 
+
+class RoomTypeSeedState(db.Model):
+    """Persist whether the initial room type catalog has been seeded."""
+
+    __tablename__ = "room_type_seed_state"
+
+    id = db.Column(db.Integer, primary_key=True)
+    initialized = db.Column(db.Boolean, nullable=False, default=False)
+
