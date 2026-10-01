@@ -75,14 +75,19 @@
   {% endif %}
 
   {% if create_room_type %}
-    <section class="dashboard-panel room-type-edit-panel" aria-labelledby="room-type-create-title">
-      <header class="panel-header">
+    <dialog class="room-dialog" id="room-type-dialog" aria-labelledby="room-type-create-title" data-open-on-load>
+      <header class="room-dialog__header">
         <div>
+          <p class="page-kicker">Danh mục phòng</p>
           <h2 id="room-type-create-title">Thêm thể loại phòng</h2>
-          <p>Nhập thông tin cho thể loại phòng mới.</p>
+          <p class="room-dialog__subtitle">Nhập thông tin cho thể loại phòng mới.</p>
         </div>
+        <button class="room-dialog__close" id="close-room-type-dialog" type="button" aria-label="Đóng" title="Đóng">
+          <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+        </button>
       </header>
-      <form class="room-form room-type-edit-form" method="post" action="{{ url_for('create_room_type') }}">
+      {% if service_error %}<p class="form-alert form-alert--error room-dialog__alert" role="alert">{{ service_error }}</p>{% endif %}
+      <form class="room-form" method="post" action="{{ url_for('create_room_type') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="room-form__grid">
           <div class="form-field">
@@ -119,11 +124,23 @@
           </div>
         </div>
         <footer class="room-form__footer">
-          <a class="action-button" href="{{ url_for('room_types') }}">Hủy</a>
+          <button class="action-button" id="cancel-room-type-dialog" type="button">Hủy</button>
           <button class="action-button action-button--primary" type="submit">Thêm thể loại phòng</button>
         </footer>
       </form>
-    </section>
+    </dialog>
+    <script>
+      const roomTypeDialog = document.getElementById("room-type-dialog");
+      document.getElementById("close-room-type-dialog").addEventListener("click", () => {
+        window.location.assign("{{ url_for('room_types') }}");
+      });
+      document.getElementById("cancel-room-type-dialog").addEventListener("click", () => {
+        window.location.assign("{{ url_for('room_types') }}");
+      });
+      if (roomTypeDialog.hasAttribute("data-open-on-load")) {
+        roomTypeDialog.showModal();
+      }
+    </script>
   {% endif %}
 
   <section class="dashboard-panel room-types-page" aria-labelledby="room-types-table-title">

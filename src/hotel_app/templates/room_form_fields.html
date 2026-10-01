@@ -15,30 +15,29 @@
       {% if errors.get('price') %}<small class="field-error" id="room-price-error">{{ errors.price }}</small>{% endif %}
     </div>
 
-    <div class="form-field">
-      <label for="room-check-in">Giờ vào</label>
-      <input id="room-check-in" name="check_in" type="time" value="{{ check_in }}" aria-describedby="room-check-in-error">
-      {% if errors.get('check_in') %}<small class="field-error" id="room-check-in-error">{{ errors.check_in }}</small>{% endif %}
-    </div>
-
-    <div class="form-field">
-      <label for="room-check-out">Giờ ra</label>
-      <input id="room-check-out" name="check_out" type="time" value="{{ check_out }}" aria-describedby="room-check-out-error">
-      {% if errors.get('check_out') %}<small class="field-error" id="room-check-out-error">{{ errors.check_out }}</small>{% endif %}
-    </div>
-
     <fieldset class="form-field room-type-options">
       <legend>Thể loại phòng</legend>
       <div class="checkbox-options">
         {% for code, label in room_types.items() %}
           <label class="checkbox-option">
-            <input type="radio" name="room_type" value="{{ code }}"{% if loop.first %} required{% endif %}{% if code in selected_types %} checked{% endif %}>
+            <input type="checkbox" name="room_type" value="{{ code }}"{% if code in selected_types %} checked{% endif %}>
             <span>{{ label }}</span>
           </label>
         {% endfor %}
       </div>
       {% if errors.get('room_type') %}<small class="field-error">{{ errors.room_type }}</small>{% endif %}
     </fieldset>
+
+    {% if update_mode %}
+      <div class="form-field">
+        <label for="room-status">Trạng thái phòng</label>
+        <select id="room-status" name="status" required aria-describedby="room-status-error">
+          <option value="Phòng trống"{% if status == 'Phòng trống' %} selected{% endif %}>Phòng trống</option>
+          <option value="Đang thuê"{% if status == 'Đang thuê' %} selected{% endif %}>Đang thuê</option>
+        </select>
+        {% if errors.get('status') %}<small class="field-error" id="room-status-error">{{ errors.status }}</small>{% endif %}
+      </div>
+    {% endif %}
 
     <div class="form-field form-field--wide">
       <label for="room-description">Mô tả ngắn</label>

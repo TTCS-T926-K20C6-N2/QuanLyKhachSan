@@ -26,10 +26,6 @@
     {% endfor %}
   {% endwith %}
 
-  <div class="demo-notice" role="note">
-    <span>Dữ liệu phòng đang hiển thị để minh họa giao diện.</span>
-  </div>
-
   <section id="room-list" class="dashboard-panel" aria-labelledby="room-list-title">
     <header class="panel-header">
       <div>
@@ -65,11 +61,11 @@
                 <dl class="room-times">
                   <div>
                     <dt>Giờ vào</dt>
-                    <dd>{{ room.check_in or "—" }}</dd>
+                    <dd>—</dd>
                   </div>
                   <div>
                     <dt>Giờ ra</dt>
-                    <dd>{{ room.check_out or "—" }}</dd>
+                    <dd>—</dd>
                   </div>
                 </dl>
                 <div class="room-actions">

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import secrets
-from copy import deepcopy
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -15,7 +14,15 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.utils import secure_filename
 
 from .extensions import csrf, db
-from .models import RoomType, RoomTypeSeedState, User, normalize_email
+from .models import (
+    LegacyRoomSessionMigration,
+    Room,
+    RoomSeedState,
+    RoomType,
+    RoomTypeSeedState,
+    User,
+    normalize_email,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -25,11 +32,6 @@ REGISTER_SUCCESS_MESSAGE = "Tạo tài khoản thành công. Vui lòng đăng nh
 DEVELOPMENT_DEMO_EMAIL = "demo@example.test"
 DEVELOPMENT_DEMO_PASSWORD = "Demo1@Hotel2026"
 TRUE_VALUES = {"1", "true", "yes", "on"}
-ROOM_TYPES = {
-    "single": "Phòng đơn",
-    "double": "Phòng đôi",
-    "vip": "Phòng VIP",
-}
 ALLOWED_ROOM_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 ROOM_IMAGE_SIGNATURES = {
     "jpg": (b"\xff\xd8\xff",),
@@ -42,24 +44,24 @@ ROOM_FLOORS = (
         "name": "Tầng 1",
         "rooms": (
             {
-                "number": "101", "type": "Phòng tiêu chuẩn",
+                "number": "101", "type": "Phòng đơn",
                 "status": "Phòng trống", "state": "empty",
                 "check_in": None, "check_out": None,
             },
             {
-                "number": "102", "type": "Phòng 2 giường đơn",
-                "status": "Đang thuê", "state": "occupied",
-                "check_in": "14:00", "check_out": "12:00",
+                "number": "102", "type": "Phòng đôi",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
             },
             {
-                "number": "103", "type": "Phòng tiêu chuẩn",
+                "number": "103", "type": "Phòng đơn",
                 "status": "Phòng trống", "state": "empty",
                 "check_in": None, "check_out": None,
             },
             {
                 "number": "104", "type": "Phòng VIP",
-                "status": "Đang thuê", "state": "occupied",
-                "check_in": "15:30", "check_out": "11:30",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
             },
         ),
     },
@@ -67,14 +69,14 @@ ROOM_FLOORS = (
         "name": "Tầng 2",
         "rooms": (
             {
-                "number": "201", "type": "Phòng 1 giường đôi",
+                "number": "201", "type": "Phòng đôi",
                 "status": "Phòng trống", "state": "empty",
                 "check_in": None, "check_out": None,
             },
             {
-                "number": "202", "type": "Phòng tiêu chuẩn",
-                "status": "Đang thuê", "state": "occupied",
-                "check_in": "13:15", "check_out": "12:00",
+                "number": "202", "type": "Phòng đơn",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
             },
             {
                 "number": "203", "type": "Phòng VIP",
@@ -82,7 +84,7 @@ ROOM_FLOORS = (
                 "check_in": None, "check_out": None,
             },
             {
-                "number": "204", "type": "Phòng 2 giường đơn",
+                "number": "204", "type": "Phòng đôi",
                 "status": "Phòng trống", "state": "empty",
                 "check_in": None, "check_out": None,
             },
@@ -92,9 +94,9 @@ ROOM_FLOORS = (
         "name": "Tầng 3",
         "rooms": (
             {
-                "number": "301", "type": "Phòng tiêu chuẩn",
-                "status": "Đang thuê", "state": "occupied",
-                "check_in": "14:00", "check_out": "12:00",
+                "number": "301", "type": "Phòng đơn",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
             },
             {
                 "number": "302", "type": "Phòng VIP",
@@ -102,12 +104,12 @@ ROOM_FLOORS = (
                 "check_in": None, "check_out": None,
             },
             {
-                "number": "303", "type": "Phòng 1 giường đôi",
+                "number": "303", "type": "Phòng đôi",
                 "status": "Phòng trống", "state": "empty",
                 "check_in": None, "check_out": None,
             },
             {
-                "number": "304", "type": "Phòng tiêu chuẩn",
+                "number": "304", "type": "Phòng đơn",
                 "status": "Phòng trống", "state": "empty",
                 "check_in": None, "check_out": None,
             },
@@ -116,11 +118,19 @@ ROOM_FLOORS = (
 )
 ROOM_TYPE_CATALOG = (
     {
-        "name": "Phòng tiêu chuẩn",
+        "name": "Phòng đơn",
         "price": 500000,
         "quantity": 0,
         "capacity": "2 người",
         "description": "Phòng cơ bản đầy đủ tiện nghi",
+        "status": "active",
+    },
+    {
+        "name": "Phòng đôi",
+        "price": 750000,
+        "quantity": 0,
+        "capacity": "2 người",
+        "description": "Phòng có giường đôi",
         "status": "active",
     },
     {
@@ -200,39 +210,174 @@ def _seed_demo_user(app: Flask) -> None:
 
 def _seed_room_types() -> None:
     seed_state = db.session.get(RoomTypeSeedState, 1)
-    if seed_state is not None and seed_state.initialized:
+    legacy_single = db.session.execute(
+        db.select(RoomType).where(RoomType.name == "Phòng tiêu chuẩn")
+    ).scalar_one_or_none()
+    if (
+        seed_state is not None
+        and seed_state.initialized
+        and legacy_single is None
+    ):
         return
 
-    existing_room_type = db.session.execute(
-        db.select(RoomType.id).limit(1)
-    ).first()
-    if existing_room_type is not None:
-        seed_state = seed_state or RoomTypeSeedState(id=1)
-        seed_state.initialized = True
-        db.session.add(seed_state)
-        db.session.commit()
-        return
+    existing_room_types = db.session.execute(db.select(RoomType)).scalars().all()
+    existing_names = {room_type.name.casefold() for room_type in existing_room_types}
+    if legacy_single is not None and "phòng đơn" not in existing_names:
+        legacy_single.name = "Phòng đơn"
+        existing_names.remove("phòng tiêu chuẩn")
+        existing_names.add("phòng đơn")
 
     seed_state = seed_state or RoomTypeSeedState(id=1)
     seed_state.initialized = True
-    db.session.add_all(RoomType(**room_type) for room_type in ROOM_TYPE_CATALOG)
+    db.session.add_all(
+        RoomType(**room_type)
+        for room_type in ROOM_TYPE_CATALOG
+        if room_type["name"].casefold() not in existing_names
+    )
     db.session.add(seed_state)
     db.session.commit()
 
 
-def _session_room_floors() -> list[dict[str, Any]]:
-    floors = session.get("room_floors")
-    if floors is None:
-        floors = deepcopy(ROOM_FLOORS)
+def _room_values(
+    room_data: dict[str, Any], floor: str, position: int, *, is_demo: bool
+) -> dict[str, Any]:
+    room_type = room_data.get("type", "")
+    if room_type == "Phòng tiêu chuẩn":
+        room_type = "Phòng đơn"
+    elif room_type in {"Phòng 1 giường đôi", "Phòng 2 giường đơn"}:
+        room_type = "Phòng đôi"
+    return {
+        "number": str(room_data.get("number", "")),
+        "floor": floor,
+        "position": position,
+        "type": room_type,
+        "description": str(room_data.get("description") or ""),
+        "price": int(room_data.get("price") or 0),
+        "image": room_data.get("image"),
+        "status": str(room_data.get("status") or "Phòng trống"),
+        "state": str(room_data.get("state") or "empty"),
+        "check_in": room_data.get("check_in"),
+        "check_out": room_data.get("check_out"),
+        "is_demo": is_demo,
+    }
 
-    normalized_floors: list[dict[str, Any]] = []
-    for floor in floors:
-        normalized_floor = dict(floor)
-        normalized_floor["rooms"] = list(floor.get("rooms", ()))
-        normalized_floors.append(normalized_floor)
 
-    session["room_floors"] = normalized_floors
-    return normalized_floors
+def _seed_rooms() -> None:
+    seed_state = db.session.get(RoomSeedState, 1)
+    if seed_state is not None and seed_state.initialized:
+        return
+
+    has_rooms = db.session.execute(db.select(Room.id).limit(1)).first() is not None
+    seed_state = seed_state or RoomSeedState(id=1)
+    seed_state.initialized = True
+    db.session.add(seed_state)
+    if not has_rooms:
+        db.session.add_all(
+            Room(**_room_values(room, floor["name"], position, is_demo=True))
+            for floor in ROOM_FLOORS
+            for position, room in enumerate(floor["rooms"])
+        )
+    db.session.commit()
+
+
+def _migrate_legacy_room_session() -> None:
+    legacy_floors = session.get("room_floors")
+    if legacy_floors is None:
+        return
+
+    migration = db.session.get(LegacyRoomSessionMigration, 1)
+    if migration is not None and migration.completed:
+        demo_numbers = {
+            str(room["number"]).casefold()
+            for floor in ROOM_FLOORS
+            for room in floor["rooms"]
+        }
+        existing_numbers = {
+            number.casefold()
+            for number in db.session.execute(db.select(Room.number)).scalars()
+        }
+        for floor in legacy_floors:
+            for position, room_data in enumerate(floor.get("rooms", ())):
+                values = _room_values(
+                    room_data,
+                    floor["name"],
+                    position,
+                    is_demo=str(room_data.get("number", "")).casefold()
+                    in demo_numbers,
+                )
+                if (
+                    values["number"].casefold() not in existing_numbers
+                    and values["number"].casefold() not in demo_numbers
+                ):
+                    db.session.add(Room(**values))
+                    existing_numbers.add(values["number"].casefold())
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            raise
+        session.pop("room_floors", None)
+        return
+
+    demo_numbers = {
+        str(room["number"]).casefold()
+        for floor in ROOM_FLOORS
+        for room in floor["rooms"]
+    }
+    legacy_rooms = [
+        (floor["name"], position, room)
+        for floor in legacy_floors
+        for position, room in enumerate(floor.get("rooms", ()))
+    ]
+    legacy_numbers = {str(room.get("number", "")).casefold() for _, _, room in legacy_rooms}
+    existing_rooms = db.session.execute(db.select(Room)).scalars().all()
+    existing_by_number = {room.number.casefold(): room for room in existing_rooms}
+
+    for existing in existing_rooms:
+        if existing.is_demo and existing.number.casefold() not in legacy_numbers:
+            db.session.delete(existing)
+
+    for floor_name, position, room_data in legacy_rooms:
+        values = _room_values(
+            room_data,
+            floor_name,
+            position,
+            is_demo=str(room_data.get("number", "")).casefold() in demo_numbers,
+        )
+        existing = existing_by_number.get(values["number"].casefold())
+        if existing is None:
+            db.session.add(Room(**values))
+        elif existing.is_demo:
+            for key, value in values.items():
+                setattr(existing, key, value)
+
+    migration = migration or LegacyRoomSessionMigration(id=1)
+    migration.completed = True
+    db.session.add(migration)
+    db.session.commit()
+    session.pop("room_floors", None)
+
+
+def _room_floor_groups() -> list[dict[str, Any]]:
+    _migrate_legacy_room_session()
+    rooms = db.session.execute(db.select(Room)).scalars().all()
+    floor_order = {floor["name"]: index for index, floor in enumerate(ROOM_FLOORS)}
+    rooms.sort(
+        key=lambda room: (
+            floor_order.get(room.floor, len(floor_order)),
+            room.floor,
+            room.position,
+            room.id,
+        )
+    )
+
+    grouped_rooms: dict[str, list[Room]] = {}
+    for room in rooms:
+        grouped_rooms.setdefault(room.floor, []).append(room)
+    return [
+        {"name": floor, "rooms": floor_rooms}
+        for floor, floor_rooms in grouped_rooms.items()
+    ]
 
 
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
@@ -282,6 +427,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if user is None:
             session.clear()
         return user
+
+    def room_type_options() -> dict[str, str]:
+        room_types = db.session.execute(
+            db.select(RoomType).order_by(RoomType.id)
+        ).scalars()
+        return {str(room_type.id): room_type.name for room_type in room_types}
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -389,7 +540,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         return redirect(url_for("room_management"))
 
     def render_room_management(user: User | None, **form_context):
-        floors = _session_room_floors()
+        floors = _room_floor_groups()
         room_count = sum(len(floor["rooms"]) for floor in floors)
         context = {
             "errors": {},
@@ -397,7 +548,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             "description": "",
             "price": "",
             "selected_types": [],
-            "room_types": ROOM_TYPES,
+            "room_types": room_type_options(),
             "modal_form": True,
             "room_modal_open": False,
             "service_error": None,
@@ -431,13 +582,13 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         check_in = request.form.get("check_in", "").strip()
         check_out = request.form.get("check_out", "").strip()
         selected_types = request.form.getlist("room_type")
+        available_room_types = room_type_options()
+        service_error: str | None = None
 
         if request.method == "POST":
-            floors = _session_room_floors()
             existing_numbers = {
-                str(room.get("number", "")).casefold()
-                for floor in floors
-                for room in floor.get("rooms", [])
+                number.casefold()
+                for number in db.session.execute(db.select(Room.number)).scalars()
             }
             if not room_number:
                 errors["room_number"] = "Vui lòng nhập mã phòng."
@@ -455,7 +606,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             elif len(description) > 200:
                 errors["description"] = "Mô tả không được vượt quá 200 ký tự."
 
-            if len(selected_types) != 1 or selected_types[0] not in ROOM_TYPES:
+            if len(selected_types) != 1 or selected_types[0] not in available_room_types:
                 errors["room_type"] = "Vui lòng chọn đúng một thể loại phòng."
 
             try:
@@ -492,32 +643,71 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
             if not errors:
                 upload_folder = Path(app.config["ROOM_UPLOAD_FOLDER"])
-                upload_folder.mkdir(parents=True, exist_ok=True)
                 image_name = f"{secrets.token_hex(16)}.{image_extension}"
-                (upload_folder / image_name).write_bytes(image_data)
-
-                new_room = {
-                    "number": room_number,
-                    "type": ROOM_TYPES[selected_types[0]],
-                    "description": description,
-                    "price": price,
-                    "image": image_name,
-                    "status": "Phòng trống",
-                    "state": "empty",
-                    "check_in": check_in or None,
-                    "check_out": check_out or None,
-                }
-                new_floor = next(
-                    (floor for floor in floors if floor["name"] == "Phòng mới"),
-                    None,
-                )
-                if new_floor is None:
-                    new_floor = {"name": "Phòng mới", "rooms": []}
-                    floors.append(new_floor)
-                new_floor["rooms"].append(new_room)
-                session["room_floors"] = floors
-                flash(f"Đã thêm phòng {room_number}.", "success")
-                return redirect(url_for("room_management"))
+                image_path = upload_folder / image_name
+                try:
+                    upload_folder.mkdir(parents=True, exist_ok=True)
+                    image_path.write_bytes(image_data)
+                    existing_positions = db.session.execute(
+                        db.select(Room.position).where(Room.floor == "Phòng mới")
+                    ).scalars().all()
+                    db.session.add(
+                        Room(
+                            number=room_number,
+                            floor="Phòng mới",
+                            position=max(existing_positions, default=-1) + 1,
+                            type=available_room_types[selected_types[0]],
+                            description=description,
+                            price=price,
+                            image=image_name,
+                            status="Phòng trống",
+                            state="empty",
+                            check_in=check_in or None,
+                            check_out=check_out or None,
+                            is_demo=False,
+                        )
+                    )
+                    db.session.commit()
+                except IntegrityError:
+                    db.session.rollback()
+                    image_path.unlink(missing_ok=True)
+                    errors["room_number"] = "Mã phòng đã tồn tại."
+                except SQLAlchemyError:
+                    db.session.rollback()
+                    image_path.unlink(missing_ok=True)
+                    app.logger.exception("A room creation failed.")
+                    service_error = "Không thể lưu phòng. Vui lòng thử lại."
+                except OSError:
+                    db.session.rollback()
+                    image_path.unlink(missing_ok=True)
+                    app.logger.exception("A room image could not be saved.")
+                    service_error = "Không thể lưu hình ảnh phòng. Vui lòng thử lại."
+                else:
+                    flash(f"Đã thêm phòng {room_number}.", "success")
+                    return redirect(url_for("room_management"))
+                if service_error is not None:
+                    if request.form.get("modal_form") == "1":
+                        return render_room_management(
+                            user,
+                            errors=errors,
+                            room_number=room_number,
+                            description=description,
+                            price=price_input,
+                            selected_types=selected_types,
+                            room_modal_open=True,
+                            service_error=service_error,
+                        ), 503
+                    return render_template(
+                        "room_form.html",
+                        user=user,
+                        errors=errors,
+                        room_number=room_number,
+                        description=description,
+                        price=price_input,
+                        selected_types=selected_types,
+                        room_types=available_room_types,
+                        service_error=service_error,
+                    ), 503
 
         if request.form.get("modal_form") == "1":
             return render_room_management(
@@ -542,7 +732,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             check_in=check_in,
             check_out=check_out,
             selected_types=selected_types,
-            room_types=ROOM_TYPES,
+            room_types=available_room_types,
         )
 
     @app.route("/rooms/<room_number>/edit", methods=["GET", "POST"])
@@ -552,45 +742,35 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return redirect(url_for("login"))
 
         normalized_number = str(room_number).strip()
-        floors = _session_room_floors()
-        room = next(
-            (
-                candidate
-                for floor in floors
-                for candidate in floor.get("rooms", [])
-                if str(candidate.get("number")) == normalized_number
-            ),
-            None,
-        )
+        room = db.session.execute(
+            db.select(Room).where(Room.number == normalized_number)
+        ).scalar_one_or_none()
         if room is None:
             flash(f"Không tìm thấy phòng {normalized_number}.", "error")
             return redirect(url_for("room_management"))
 
         errors: dict[str, str] = {}
-        room_number_input = request.form.get("room_number", room.get("number", "")).strip()
-        description = request.form.get("description", room.get("description", "")).strip()
-        price_input = request.form.get("price", str(room.get("price", ""))).strip()
-        check_in = request.form.get("check_in", room.get("check_in") or "").strip()
-        check_out = request.form.get("check_out", room.get("check_out") or "").strip()
+        room_number_input = request.form.get("room_number", room.number).strip()
+        description = request.form.get("description", room.description).strip()
+        price_input = request.form.get("price", str(room.price)).strip()
+        check_in = request.form.get("check_in", room.check_in or "").strip()
+        check_out = request.form.get("check_out", room.check_out or "").strip()
+        room_status = request.form.get("status", room.status).strip()
         selected_types = request.form.getlist("room_type")
+        available_room_types = room_type_options()
         if request.method == "GET":
             selected_types = [
-                code for code, label in ROOM_TYPES.items() if label == room.get("type")
+                code
+                for code, label in available_room_types.items()
+                if label == room.type
             ]
-            if not selected_types:
-                room_type_label = str(room.get("type", "")).casefold()
-                selected_types = [
-                    "vip" if "vip" in room_type_label else (
-                        "single" if "tiêu chuẩn" in room_type_label else "double"
-                    )
-                ]
 
         if request.method == "POST":
             existing_numbers = {
-                str(candidate.get("number", "")).casefold()
-                for floor in floors
-                for candidate in floor.get("rooms", [])
-                if candidate is not room
+                number.casefold()
+                for number in db.session.execute(
+                    db.select(Room.number).where(Room.id != room.id)
+                ).scalars()
             }
             if not room_number_input:
                 errors["room_number"] = "Vui lòng nhập mã phòng."
@@ -608,8 +788,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             elif len(description) > 200:
                 errors["description"] = "Mô tả không được vượt quá 200 ký tự."
 
-            if len(selected_types) != 1 or selected_types[0] not in ROOM_TYPES:
+            if len(selected_types) != 1 or selected_types[0] not in available_room_types:
                 errors["room_type"] = "Vui lòng chọn đúng một thể loại phòng."
+
+            if room_status not in {"Phòng trống", "Đang thuê"}:
+                errors["status"] = "Vui lòng chọn trạng thái phòng hợp lệ."
 
             try:
                 price = int(price_input)
@@ -643,26 +826,55 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     errors["image"] = "Ảnh WEBP không hợp lệ."
 
             if not errors:
-                old_image = room.get("image")
-                room.update(
-                    number=room_number_input,
-                    type=ROOM_TYPES[selected_types[0]],
-                    description=description,
-                    price=price,
-                    check_in=check_in or None,
-                    check_out=check_out or None,
-                )
-                if has_new_image:
-                    upload_folder = Path(app.config["ROOM_UPLOAD_FOLDER"])
-                    upload_folder.mkdir(parents=True, exist_ok=True)
-                    image_name = f"{secrets.token_hex(16)}.{image_extension}"
-                    (upload_folder / image_name).write_bytes(image_data)
-                    room["image"] = image_name
-                    if old_image and Path(old_image).name == old_image:
-                        (upload_folder / old_image).unlink(missing_ok=True)
-                session["room_floors"] = floors
-                flash(f"Đã cập nhật phòng {room_number_input}.", "success")
-                return redirect(url_for("room_management"))
+                old_image = room.image
+                new_image_name = None
+                new_image_path = None
+                service_error = None
+                service_status = 200
+                try:
+                    if has_new_image:
+                        upload_folder = Path(app.config["ROOM_UPLOAD_FOLDER"])
+                        upload_folder.mkdir(parents=True, exist_ok=True)
+                        new_image_name = f"{secrets.token_hex(16)}.{image_extension}"
+                        new_image_path = upload_folder / new_image_name
+                        new_image_path.write_bytes(image_data)
+                        room.image = new_image_name
+
+                    room.number = room_number_input
+                    room.type = available_room_types[selected_types[0]]
+                    room.description = description
+                    room.price = price
+                    room.status = room_status
+                    room.state = "occupied" if room_status == "Đang thuê" else "empty"
+                    room.check_in = check_in or None
+                    room.check_out = check_out or None
+                    db.session.commit()
+                except IntegrityError:
+                    db.session.rollback()
+                    if new_image_path is not None:
+                        new_image_path.unlink(missing_ok=True)
+                    errors["room_number"] = "Mã phòng đã tồn tại."
+                except SQLAlchemyError:
+                    db.session.rollback()
+                    if new_image_path is not None:
+                        new_image_path.unlink(missing_ok=True)
+                    app.logger.exception("A room update failed.")
+                    service_error = "Không thể cập nhật phòng. Vui lòng thử lại."
+                    service_status = 503
+                except OSError:
+                    db.session.rollback()
+                    if new_image_path is not None:
+                        new_image_path.unlink(missing_ok=True)
+                    app.logger.exception("A room image could not be saved.")
+                    service_error = "Không thể lưu hình ảnh phòng. Vui lòng thử lại."
+                    service_status = 503
+                else:
+                    if new_image_name and old_image and Path(old_image).name == old_image:
+                        (Path(app.config["ROOM_UPLOAD_FOLDER"]) / old_image).unlink(
+                            missing_ok=True
+                        )
+                    flash(f"Đã cập nhật phòng {room_number_input}.", "success")
+                    return redirect(url_for("room_management"))
 
         return render_template(
             "room_form.html",
@@ -674,12 +886,13 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             check_in=check_in,
             check_out=check_out,
             selected_types=selected_types,
-            room_types=ROOM_TYPES,
+            status=room_status,
+            room_types=available_room_types,
             update_mode=True,
             edit_room_number=normalized_number,
-            current_image=room.get("image"),
-            service_error=None,
-        )
+            current_image=room.image,
+            service_error=locals().get("service_error"),
+        ), locals().get("service_status", 200)
 
     @app.route("/room-images/<path:filename>")
     def room_image(filename: str):
@@ -694,23 +907,35 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return redirect(url_for("login"))
 
         normalized_number = str(room_number).strip()
-        floors = _session_room_floors()
+        room = db.session.execute(
+            db.select(Room).where(Room.number == normalized_number)
+        ).scalar_one_or_none()
+        if room is None:
+            flash(f"Không tìm thấy phòng {normalized_number}.", "error")
+            return redirect(url_for("room_management"))
 
-        for floor in floors:
-            rooms = floor.get("rooms", [])
-            for index, room in enumerate(rooms):
-                if str(room.get("number")) == normalized_number:
-                    del rooms[index]
-                    session["room_floors"] = floors
-                    image_name = room.get("image")
-                    if image_name and Path(image_name).name == image_name:
-                        (Path(app.config["ROOM_UPLOAD_FOLDER"]) / image_name).unlink(
-                            missing_ok=True
-                        )
-                    flash(f"Đã xóa phòng {normalized_number}.", "success")
-                    return redirect(url_for("room_management"))
+        if room.status == "Đang thuê" or room.state == "occupied":
+            flash(
+                f"Không thể xóa phòng {normalized_number} đang được thuê.",
+                "error",
+            )
+            return redirect(url_for("room_management"))
 
-        flash(f"Không tìm thấy phòng {normalized_number}.", "error")
+        image_name = room.image
+        try:
+            db.session.delete(room)
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.exception("A room deletion failed.")
+            flash("Không thể xóa phòng. Vui lòng thử lại.", "error")
+            return redirect(url_for("room_management"))
+
+        if image_name and Path(image_name).name == image_name:
+            (Path(app.config["ROOM_UPLOAD_FOLDER"]) / image_name).unlink(
+                missing_ok=True
+            )
+        flash(f"Đã xóa phòng {normalized_number}.", "success")
         return redirect(url_for("room_management"))
 
     @app.route("/account")
@@ -1030,7 +1255,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     description="",
                     price="",
                     selected_types=[],
-                    room_types=ROOM_TYPES,
+                    room_types=room_type_options(),
                     service_error=(
                         "Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
                     ),
@@ -1080,6 +1305,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         db.create_all()
         _seed_demo_user(app)
         _seed_room_types()
+        _seed_rooms()
 
     return app
 

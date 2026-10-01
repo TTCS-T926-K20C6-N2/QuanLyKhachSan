@@ -49,3 +49,41 @@ class RoomTypeSeedState(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     initialized = db.Column(db.Boolean, nullable=False, default=False)
 
+
+class Room(db.Model):
+    """Persistent room record shared across authenticated sessions."""
+
+    __tablename__ = "rooms"
+
+    id = db.Column(db.Integer, primary_key=True)
+    number = db.Column(db.String(20, collation="NOCASE"), nullable=False, unique=True)
+    floor = db.Column(db.String(80), nullable=False)
+    position = db.Column(db.Integer, nullable=False, default=0)
+    type = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.Text, nullable=False, default="")
+    price = db.Column(db.Integer, nullable=False, default=0)
+    image = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(32), nullable=False, default="Phòng trống")
+    state = db.Column(db.String(24), nullable=False, default="empty")
+    check_in = db.Column(db.String(5), nullable=True)
+    check_out = db.Column(db.String(5), nullable=True)
+    is_demo = db.Column(db.Boolean, nullable=False, default=False)
+
+
+class RoomSeedState(db.Model):
+    """Records one-time room seeding so deleted demos do not return."""
+
+    __tablename__ = "room_seed_state"
+
+    id = db.Column(db.Integer, primary_key=True)
+    initialized = db.Column(db.Boolean, nullable=False, default=False)
+
+
+class LegacyRoomSessionMigration(db.Model):
+    """Records the one-time import of a pre-database room session."""
+
+    __tablename__ = "legacy_room_session_migration"
+
+    id = db.Column(db.Integer, primary_key=True)
+    completed = db.Column(db.Boolean, nullable=False, default=False)
+
