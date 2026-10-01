@@ -121,6 +121,8 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-times dt { color: #536579; font-size: 0.72rem; }
 .room-times dd { margin: 2px 0 0; color: #17324c; font-size: 0.88rem; font-weight: 750; }
 .room-actions { display: flex; gap: 7px; margin-top: 14px; padding-top: 11px; border-top: 1px solid #e8edf2; }
+.room-card__delete { display: flex; flex: 1; }
+.room-card__delete .action-button { width: 100%; }
 .room-actions .action-button { flex: 1; }
 .room-type-table-wrap { overflow-x: auto; }
 .room-type-table { width: 100%; min-width: 560px; border-collapse: collapse; }

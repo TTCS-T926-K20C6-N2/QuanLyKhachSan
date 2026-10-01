@@ -94,6 +94,29 @@ def test_room_cards_stay_on_room_management_page(client):
     assert 'href="/" aria-current="page"' not in room_management_page
 
 
+def test_room_delete_removes_room_from_management_page(client):
+    assert _login(client).status_code == 302
+
+    room_management_page = client.get("/rooms").get_data(as_text=True)
+    csrf_token = re.search(
+        r'name="csrf_token"[^>]*value="([^"]+)"',
+        room_management_page,
+    )
+    assert csrf_token is not None
+
+    response = client.post(
+        "/rooms/101/delete",
+        data={"csrf_token": csrf_token.group(1)},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/rooms")
+
+    room_management_page = client.get("/rooms").get_data(as_text=True)
+    assert 'aria-label="Phòng 101, Phòng trống"' not in room_management_page
+    assert 'aria-label="Phòng 102, Đang thuê"' in room_management_page
+
+
 def test_home_redirects_to_room_management(client):
     assert _login(client).status_code == 302
 

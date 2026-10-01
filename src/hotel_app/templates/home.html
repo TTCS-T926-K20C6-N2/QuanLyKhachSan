@@ -56,6 +56,19 @@
                     <dd>{{ room.check_out or "—" }}</dd>
                   </div>
                 </dl>
+                <div class="room-actions">
+                  <form
+                    method="post"
+                    action="{{ url_for('delete_room', room_number=room.number) }}"
+                    class="room-card__delete"
+                    onsubmit="return confirm('Bạn có chắc muốn xóa phòng {{ room.number }}?');"
+                  >
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="action-button action-button--delete" aria-label="Xóa phòng {{ room.number }}">
+                      Xóa phòng
+                    </button>
+                  </form>
+                </div>
               </article>
             {% endfor %}
           </div>
