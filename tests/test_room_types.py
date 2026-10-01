@@ -35,6 +35,13 @@ def test_room_types_requires_login(client):
     assert response.headers["Location"].endswith("/login")
 
 
+def test_room_management_requires_login(client):
+    response = client.get("/rooms")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+
+
 def test_room_types_page_shows_type_management_table(client):
     assert _login(client).status_code == 302
 
@@ -71,14 +78,26 @@ def test_room_cards_stay_on_room_management_page(client):
     assert _login(client).status_code == 302
 
     room_types_page = client.get("/room-types").get_data(as_text=True)
-    room_management_page = client.get("/").get_data(as_text=True)
+    room_management_page = client.get("/rooms").get_data(as_text=True)
 
     assert "Phòng 101" not in room_types_page
     assert 'aria-label="Phòng 101, Phòng trống"' in room_management_page
     assert 'aria-label="Phòng 102, Đang thuê"' in room_management_page
+    assert 'href="/rooms" aria-current="page"' in room_management_page
     assert 'class="room-grid"' in room_management_page
     assert "Giờ vào" in room_management_page
     assert "Giờ ra" in room_management_page
     assert "14:00" in room_management_page
     assert "room-card--empty" in room_management_page
     assert "room-card--occupied" in room_management_page
+    assert "Tổng quan / Sơ đồ phòng" not in room_management_page
+    assert 'href="/" aria-current="page"' not in room_management_page
+
+
+def test_home_redirects_to_room_management(client):
+    assert _login(client).status_code == 302
+
+    response = client.get("/")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/rooms")

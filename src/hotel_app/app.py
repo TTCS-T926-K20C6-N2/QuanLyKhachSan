@@ -318,6 +318,13 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
+        return redirect(url_for("room_management"))
+
+    @app.route("/rooms")
+    def room_management():
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
         return render_template("home.html", user=user, floors=ROOM_FLOORS)
 
     @app.route("/account")
@@ -325,7 +332,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
-        return redirect(url_for("home"))
+        return redirect(url_for("room_management"))
 
     @app.route("/logout", methods=["POST"])
     def logout():

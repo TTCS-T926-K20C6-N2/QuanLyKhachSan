@@ -47,8 +47,12 @@ def test_valid_credentials_create_session_and_redirect_home(client):
         assert isinstance(stored_session["user_id"], int)
 
     home = client.get("/")
-    assert home.status_code == 200
-    assert "Đăng nhập thành công" in home.get_data(as_text=True)
+    assert home.status_code == 302
+    assert home.headers["Location"].endswith("/rooms")
+
+    room_management = client.get("/rooms")
+    assert room_management.status_code == 200
+    assert "Đăng nhập thành công" in room_management.get_data(as_text=True)
 
 
 def test_wrong_password_returns_generic_error_without_auth_session(client):
@@ -96,7 +100,7 @@ def test_account_page_is_disabled(client):
     response = client.get("/account")
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/")
+    assert response.headers["Location"].endswith("/rooms")
 
 
 def test_account_info_menu_item_is_removed(client):
@@ -108,7 +112,7 @@ def test_account_info_menu_item_is_removed(client):
 
 def test_sidebar_logout_clears_session_and_redirects_to_login(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
-    page = client.get("/").get_data(as_text=True)
+    page = client.get("/rooms").get_data(as_text=True)
 
     assert re.search(
         r'<aside class="sidebar">.*?'
@@ -138,7 +142,7 @@ def test_sidebar_logout_clears_session_and_redirects_to_login(client):
 def test_sidebar_logout_replaces_account_menu_items(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
 
-    page = client.get("/").get_data(as_text=True)
+    page = client.get("/rooms").get_data(as_text=True)
 
     assert "Thông tin tài khoản" not in page
     assert page.count("Đăng xuất") == 1
