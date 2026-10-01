@@ -107,11 +107,7 @@
       <aside class="sidebar">
         <nav class="sidebar-nav" aria-label="Điều hướng chính">
           <div class="nav-section">
-            <a class="nav-link{% if request.endpoint == 'home' %} nav-link--active{% endif %}" href="{{ url_for('home') }}"{% if request.endpoint == 'home' %} aria-current="page"{% endif %}>
-              <svg class="icon"><use href="#icon-map"></use></svg>
-              <span>Tổng quan / Sơ đồ phòng</span>
-            </a>
-            <a class="nav-link" href="{{ url_for('home') }}#room-list">
+            <a class="nav-link{% if request.endpoint == 'room_management' %} nav-link--active{% endif %}" href="{{ url_for('room_management') }}"{% if request.endpoint == 'room_management' %} aria-current="page"{% endif %}>
               <svg class="icon"><use href="#icon-rooms"></use></svg>
               <span>Quản lý phòng</span>
             </a>
