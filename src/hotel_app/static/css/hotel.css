@@ -104,18 +104,22 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-grid { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 12px; }
 .room-card { position: relative; display: flex; min-width: 0; flex-direction: column; padding: 15px 15px 14px 17px; border: 1px solid #dce5ed; border-left: 4px solid var(--blue-700); border-radius: 10px; background: #ffffff; transition: transform 140ms ease, box-shadow 140ms ease; }
 .room-card:hover { transform: translateY(-2px); box-shadow: 0 9px 20px rgba(33, 63, 92, 0.1); }
-.room-card--empty { border-left-color: var(--green); }
-.room-card--occupied { border-left-color: var(--red); }
+.room-card--empty { border-color: #b8e3ca; border-left-color: var(--green); background: var(--green-soft); }
+.room-card--occupied { border-color: #efc1bd; border-left-color: var(--red); background: var(--red-soft); }
 .room-card--cleaning { border-left-color: var(--amber); }
 .room-card__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .room-number { color: #122b45; font-size: 1.25rem; font-weight: 850; letter-spacing: 0.02em; }
 .mock-badge { padding: 2px 6px; background: #eef3f7; color: #6d7d8d; font-size: 0.62rem; }
-.room-type { margin: 5px 0 13px; color: var(--muted); font-size: 0.78rem; }
+.room-type { margin: 5px 0 12px; color: var(--muted); font-size: 0.78rem; }
 .room-status { padding: 5px 9px; font-size: 0.74rem; }
 .room-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .room-status--empty { background: var(--green-soft); color: var(--green); }
 .room-status--occupied { background: var(--red-soft); color: var(--red); }
 .room-status--cleaning { background: var(--amber-soft); color: var(--amber); }
+.room-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: auto 0 0; padding-top: 11px; border-top: 1px solid rgba(23, 36, 58, 0.1); }
+.room-times > div { min-width: 0; }
+.room-times dt { color: #536579; font-size: 0.72rem; }
+.room-times dd { margin: 2px 0 0; color: #17324c; font-size: 0.88rem; font-weight: 750; }
 .room-actions { display: flex; gap: 7px; margin-top: 14px; padding-top: 11px; border-top: 1px solid #e8edf2; }
 .room-actions .action-button { flex: 1; }
 .room-type-table-wrap { overflow-x: auto; }

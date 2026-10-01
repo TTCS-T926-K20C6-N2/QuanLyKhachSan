@@ -23,19 +23,82 @@ REGISTER_SUCCESS_MESSAGE = "Tạo tài khoản thành công. Vui lòng đăng nh
 DEVELOPMENT_DEMO_EMAIL = "demo@example.test"
 DEVELOPMENT_DEMO_PASSWORD = "Demo1@Hotel2026"
 TRUE_VALUES = {"1", "true", "yes", "on"}
-ROOMS = (
-    {"number": "101", "floor": "Tầng 1", "type": "Phòng tiêu chuẩn"},
-    {"number": "102", "floor": "Tầng 1", "type": "Phòng 2 giường đơn"},
-    {"number": "103", "floor": "Tầng 1", "type": "Phòng tiêu chuẩn"},
-    {"number": "104", "floor": "Tầng 1", "type": "Phòng vip"},
-    {"number": "201", "floor": "Tầng 2", "type": "Phòng 1 giường đôi"},
-    {"number": "202", "floor": "Tầng 2", "type": "Phòng tiêu chuẩn"},
-    {"number": "203", "floor": "Tầng 2", "type": "Phòng vip"},
-    {"number": "204", "floor": "Tầng 2", "type": "Phòng 2 giường đơn"},
-    {"number": "301", "floor": "Tầng 3", "type": "Phòng tiêu chuẩn"},
-    {"number": "302", "floor": "Tầng 3", "type": "Phòng vip"},
-    {"number": "303", "floor": "Tầng 3", "type": "Phòng 1 giường đôi"},
-    {"number": "304", "floor": "Tầng 3", "type": "Phòng tiêu chuẩn"},
+ROOM_FLOORS = (
+    {
+        "name": "Tầng 1",
+        "rooms": (
+            {
+                "number": "101", "type": "Phòng tiêu chuẩn",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
+            },
+            {
+                "number": "102", "type": "Phòng 2 giường đơn",
+                "status": "Đang thuê", "state": "occupied",
+                "check_in": "14:00", "check_out": "12:00",
+            },
+            {
+                "number": "103", "type": "Phòng tiêu chuẩn",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
+            },
+            {
+                "number": "104", "type": "Phòng VIP",
+                "status": "Đang thuê", "state": "occupied",
+                "check_in": "15:30", "check_out": "11:30",
+            },
+        ),
+    },
+    {
+        "name": "Tầng 2",
+        "rooms": (
+            {
+                "number": "201", "type": "Phòng 1 giường đôi",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
+            },
+            {
+                "number": "202", "type": "Phòng tiêu chuẩn",
+                "status": "Đang thuê", "state": "occupied",
+                "check_in": "13:15", "check_out": "12:00",
+            },
+            {
+                "number": "203", "type": "Phòng VIP",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
+            },
+            {
+                "number": "204", "type": "Phòng 2 giường đơn",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
+            },
+        ),
+    },
+    {
+        "name": "Tầng 3",
+        "rooms": (
+            {
+                "number": "301", "type": "Phòng tiêu chuẩn",
+                "status": "Đang thuê", "state": "occupied",
+                "check_in": "14:00", "check_out": "12:00",
+            },
+            {
+                "number": "302", "type": "Phòng VIP",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
+            },
+            {
+                "number": "303", "type": "Phòng 1 giường đôi",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
+            },
+            {
+                "number": "304", "type": "Phòng tiêu chuẩn",
+                "status": "Phòng trống", "state": "empty",
+                "check_in": None, "check_out": None,
+            },
+        ),
+    },
 )
 ROOM_TYPE_CATALOG = (
     {
@@ -255,7 +318,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
-        return render_template("home.html", user=user)
+        return render_template("home.html", user=user, floors=ROOM_FLOORS)
 
     @app.route("/account")
     def account():

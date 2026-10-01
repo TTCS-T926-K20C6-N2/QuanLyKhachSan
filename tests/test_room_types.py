@@ -74,5 +74,11 @@ def test_room_cards_stay_on_room_management_page(client):
     room_management_page = client.get("/").get_data(as_text=True)
 
     assert "Phòng 101" not in room_types_page
-    assert 'aria-label="Phòng mẫu 101' in room_management_page
+    assert 'aria-label="Phòng 101, Phòng trống"' in room_management_page
+    assert 'aria-label="Phòng 102, Đang thuê"' in room_management_page
     assert 'class="room-grid"' in room_management_page
+    assert "Giờ vào" in room_management_page
+    assert "Giờ ra" in room_management_page
+    assert "14:00" in room_management_page
+    assert "room-card--empty" in room_management_page
+    assert "room-card--occupied" in room_management_page
