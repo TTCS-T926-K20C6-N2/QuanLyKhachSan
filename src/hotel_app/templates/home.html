@@ -52,20 +52,24 @@
                   <strong class="room-number">{{ room.number }}</strong>
                   <span class="room-status room-status--{{ room.state }}">{{ room.status }}</span>
                 </div>
-                {% if room.image %}
-                  <img class="room-image" src="{{ url_for('room_image', filename=room.image) }}" alt="Ảnh phòng {{ room.number }}">
-                {% endif %}
+                {% set default_room_images = {
+                  'Phòng đơn': 'images/room-single.jpg',
+                  'Phòng đôi': 'images/room-double.jpg',
+                  'Phòng VIP': 'images/room-vip.jpg'
+                } %}
+                {% set room_image_url = url_for('room_image', filename=room.image) if room.image else url_for('static', filename=default_room_images.get(room.type, 'images/room-double.jpg')) %}
+                <img class="room-image" src="{{ room_image_url }}" alt="Ảnh phòng {{ room.number }}">
                 <p class="room-type">{{ room.type }}</p>
                 {% if room.description %}<p class="room-description">{{ room.description }}</p>{% endif %}
                 {% if room.price %}<p class="room-price">{{ "{:,.0f}".format(room.price) }} VNĐ / đêm</p>{% endif %}
                 <dl class="room-times">
                   <div>
                     <dt>Giờ vào</dt>
-                    <dd>—</dd>
+                    <dd>{{ room.check_in or "—" }}</dd>
                   </div>
                   <div>
                     <dt>Giờ ra</dt>
-                    <dd>—</dd>
+                    <dd>{{ room.check_out or "—" }}</dd>
                   </div>
                 </dl>
                 <div class="room-actions">

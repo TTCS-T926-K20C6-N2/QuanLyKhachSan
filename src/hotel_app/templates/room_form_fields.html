@@ -62,4 +62,19 @@
     {% endif %}
     <button class="action-button action-button--primary" type="submit">{{ 'Lưu cập nhật' if update_mode else 'Thêm phòng' }}</button>
   </div>
+  <script>
+    const roomForm = document.currentScript.closest("form");
+    const roomTypeOptions = roomForm.querySelector(".room-type-options");
+    roomTypeOptions.addEventListener("change", (event) => {
+      const selectedCheckbox = event.target;
+      if (!(selectedCheckbox instanceof HTMLInputElement) || !selectedCheckbox.checked) {
+        return;
+      }
+      roomTypeOptions.querySelectorAll('input[type="checkbox"][name="room_type"]').forEach((checkbox) => {
+        if (checkbox !== selectedCheckbox) {
+          checkbox.checked = false;
+        }
+      });
+    });
+  </script>
 </form>

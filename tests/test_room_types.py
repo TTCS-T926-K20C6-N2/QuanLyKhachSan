@@ -56,6 +56,51 @@ def _create_room(client, room_number: str):
     )
 
 
+def _add_test_room_type(app, name: str) -> int:
+    with app.app_context():
+        room_type = RoomType(
+            name=name,
+            price=0,
+            quantity=0,
+            capacity="",
+            description="",
+            status="active",
+        )
+        db.session.add(room_type)
+        db.session.commit()
+        return room_type.id
+
+
+def _add_test_room(
+    app,
+    number: str,
+    room_type: str,
+    *,
+    status: str = "Phòng trống",
+    state: str = "empty",
+    check_in: str | None = None,
+    check_out: str | None = None,
+) -> int:
+    with app.app_context():
+        room = Room(
+            number=number,
+            floor="Tầng kiểm thử",
+            position=1,
+            type=room_type,
+            description=f"Mô tả {number}",
+            price=825000,
+            image=f"{number}.png",
+            status=status,
+            state=state,
+            check_in=check_in,
+            check_out=check_out,
+            is_demo=False,
+        )
+        db.session.add(room)
+        db.session.commit()
+        return room.id
+
+
 def _restart_app(app):
     return create_app(
         {
@@ -113,7 +158,12 @@ def test_create_room_form_has_required_fields_and_checkbox_types(client):
     assert 'name="description"' in html
     assert 'name="price"' in html
     assert html.count('type="checkbox" name="room_type"') == 3
-    assert html.count('type="checkbox"') == 3
+    assert html.count('<input type="checkbox"') == 3
+    assert 'type="checkbox" name="room_type" required' not in html
+    assert 'class="form-field room-type-options"' in html
+    assert 'class="checkbox-option"' in html
+    assert 'roomTypeOptions.addEventListener("change"' in html
+    assert 'roomTypeOptions.querySelectorAll(\'input[type="checkbox"][name="room_type"]\')' in html
     assert "Phòng đơn" in html
     assert "Phòng đôi" in html
     assert "Phòng VIP" in html
@@ -127,6 +177,10 @@ def test_room_list_opens_add_form_as_modal(client):
 
     html = client.get("/rooms").get_data(as_text=True)
 
+    assert html.count('class="room-image"') == 12
+    assert 'images/room-single.jpg' in html
+    assert 'images/room-double.jpg' in html
+    assert 'images/room-vip.jpg' in html
     assert 'id="open-room-dialog"' in html
     assert '<dialog class="room-dialog" id="room-dialog"' in html
     assert 'id="room-dialog-title">Thêm phòng mới</h2>' in html
@@ -158,6 +212,7 @@ def test_modal_validation_keeps_room_list_visible_and_reopens_dialog(client):
     assert 'id="room-list"' in html
     assert "Vui lòng nhập mô tả ngắn." in html
     assert "Vui lòng chọn hình ảnh phòng." in html
+    assert "Vui lòng chọn đúng một thể loại phòng." in html
 
 
 def test_room_types_page_shows_type_management_table(client):
@@ -170,16 +225,16 @@ def test_room_types_page_shows_type_management_table(client):
     assert "Quản lý Thể loại phòng" in html
     assert "Danh sách thể loại phòng" in html
     assert "Tên thể loại phòng" in html
-    assert "Đơn giá / đêm" in html
-    assert "Số lượng phòng" in html
-    assert "Sức chứa" in html
-    assert "Trạng thái" in html
     assert "Phòng đơn" in html
     assert "Phòng đôi" in html
-    assert "500,000 VNĐ" in html
-    assert "750,000 VNĐ" in html
     assert "Phòng VIP" in html
-    assert "1,200,000 VNĐ" in html
+    table_html = html.split('<table class="room-type-table">', 1)[1].split("</table>", 1)[0]
+    assert table_html.count("<th scope=") == 3
+    assert "Đơn giá" not in table_html
+    assert "Số lượng" not in table_html
+    assert "Sức chứa" not in table_html
+    assert "Trạng thái" not in table_html
+    assert "Mô tả" not in table_html
     assert html.count('class="action-button action-button--edit" href="/room-types/') == 3
     assert 'name="room_type"' not in html
 
@@ -285,7 +340,14 @@ def test_create_room_type_form_is_available_to_logged_in_user(client):
     assert 'id="close-room-type-dialog"' in html
     assert 'data-open-on-load' in html
     assert 'name="csrf_token"' in html
-    assert 'id="room-type-capacity" name="capacity"' in html
+    create_form = html.split('<form class="room-form"', 1)[1].split("</form>", 1)[0]
+    assert create_form.count("<input") == 2
+    assert 'name="name" type="text" maxlength="120"' in create_form
+    assert 'name="price"' not in create_form
+    assert 'name="quantity"' not in create_form
+    assert 'name="capacity"' not in create_form
+    assert 'name="status"' not in create_form
+    assert 'name="description"' not in create_form
     assert "Thêm thể loại phòng" in html
 
 
@@ -299,12 +361,7 @@ def test_create_room_type_persists_and_updates_listing(client, app):
         "/room-types/new",
         data={
             "csrf_token": csrf_token.group(1),
-            "name": "Phòng gia đình",
-            "price": "950000",
-            "quantity": "6",
-            "capacity": "5 người",
-            "description": "Phòng dành cho gia đình.",
-            "status": "active",
+            "name": "  Phòng gia đình  ",
         },
     )
 
@@ -313,14 +370,15 @@ def test_create_room_type_persists_and_updates_listing(client, app):
     html = client.get("/room-types").get_data(as_text=True)
     assert "Thêm thể loại phòng thành công." in html
     assert "Phòng gia đình" in html
-    assert "950,000 VNĐ" in html
     with app.app_context():
         created = db.session.execute(
             db.select(RoomType).where(RoomType.name == "Phòng gia đình")
         ).scalar_one()
-        assert created.quantity == 6
-        assert created.capacity == "5 người"
-        assert created.description == "Phòng dành cho gia đình."
+        assert created.price == 0
+        assert created.quantity == 0
+        assert created.capacity == ""
+        assert created.description == ""
+        assert created.status == "active"
     room_form = client.get("/rooms/new").get_data(as_text=True)
     edit_form = client.get("/rooms/101/edit").get_data(as_text=True)
     assert "Phòng gia đình" in room_form
@@ -328,37 +386,29 @@ def test_create_room_type_persists_and_updates_listing(client, app):
 
 
 @pytest.mark.parametrize(
-    ("field", "value", "message"),
+    ("name", "message"),
     [
-        ("name", "Phòng VIP", "Tên loại phòng đã tồn tại."),
-        ("price", "0", "Giá phòng phải là số nguyên lớn hơn 0."),
-        ("quantity", "-1", "Số lượng phòng phải là số nguyên không âm."),
-        ("capacity", "", "Vui lòng nhập sức chứa."),
-        ("status", "paused", "Vui lòng chọn trạng thái hợp lệ."),
+        ("", "Vui lòng nhập tên thể loại phòng."),
+        ("phòng vip", "Tên thể loại phòng đã tồn tại."),
+        ("x" * 121, "Tên thể loại phòng không được vượt quá 120 ký tự."),
     ],
 )
-def test_invalid_room_type_creation_keeps_form_values(client, field, value, message):
+def test_invalid_room_type_creation_keeps_form_values(client, name, message):
     assert _login(client).status_code == 302
     form_html = client.get("/room-types/new").get_data(as_text=True)
     csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', form_html)
     assert csrf_token is not None
     data = {
         "csrf_token": csrf_token.group(1),
-        "name": "Phòng thử nghiệm",
-        "price": "800000",
-        "quantity": "2",
-        "capacity": "3 người",
-        "description": "Mô tả thử nghiệm",
-        "status": "active",
+        "name": name,
     }
-    data[field] = value
 
     response = client.post("/room-types/new", data=data)
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
     assert message in html
-    assert "Phòng thử nghiệm" in html or field == "name"
+    assert name in html if name else True
 
 
 def test_create_room_type_requires_login_and_csrf(client, app):
@@ -397,6 +447,51 @@ def test_canceling_room_type_delete_keeps_record(client, app):
 
 def test_room_type_delete_removes_record_and_updates_listing(client, app):
     assert _login(client).status_code == 302
+    room_type_id = _add_test_room_type(app, "Thể loại chưa sử dụng")
+    listing = client.get("/room-types").get_data(as_text=True)
+    csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', listing)
+    assert csrf_token is not None
+
+    response = client.post(
+        f"/room-types/{room_type_id}/delete",
+        data={"csrf_token": csrf_token.group(1)},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/room-types")
+    html = client.get("/room-types").get_data(as_text=True)
+    assert 'Đã xóa thể loại phòng "Thể loại chưa sử dụng" thành công.' in unescape(html)
+    assert f'href="/room-types/{room_type_id}/edit"' not in html
+    assert "Phòng đơn" in html
+    assert "Phòng VIP" in html
+    assert "Thể loại chưa sử dụng" not in client.get("/rooms/new").get_data(as_text=True)
+    assert "Thể loại chưa sử dụng" not in client.get("/rooms/101/edit").get_data(as_text=True)
+    with app.app_context():
+        assert db.session.get(RoomType, room_type_id) is None
+        assert db.session.get(RoomType, 1) is not None
+        assert db.session.get(RoomType, 2) is not None
+
+
+@pytest.mark.parametrize(
+    ("status", "state", "check_in", "check_out"),
+    [
+        ("Phòng trống", "empty", None, None),
+        ("Đang thuê", "occupied", "14:00", "12:00"),
+    ],
+)
+def test_room_type_delete_refuses_direct_post_when_room_uses_type(
+    client, app, status, state, check_in, check_out
+):
+    assert _login(client).status_code == 302
+    room_id = _add_test_room(
+        app,
+        "USED-ROOM",
+        "PHÒNG ĐƠN",
+        status=status,
+        state=state,
+        check_in=check_in,
+        check_out=check_out,
+    )
     listing = client.get("/room-types").get_data(as_text=True)
     csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', listing)
     assert csrf_token is not None
@@ -407,14 +502,19 @@ def test_room_type_delete_removes_record_and_updates_listing(client, app):
     )
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/room-types")
     html = client.get("/room-types").get_data(as_text=True)
-    assert 'Đã xóa thể loại phòng "Phòng đơn" thành công.' in unescape(html)
-    assert 'href="/room-types/1/edit"' not in html
-    assert "Phòng VIP" in html
+    assert "Không thể xóa thể loại phòng này vì đang có phòng sử dụng." in html
     with app.app_context():
-        assert db.session.get(RoomType, 1) is None
-        assert db.session.get(RoomType, 2) is not None
+        stored_type = db.session.get(RoomType, 1)
+        stored_room = db.session.get(Room, room_id)
+        assert stored_type is not None
+        assert stored_type.name == "Phòng đơn"
+        assert stored_room is not None
+        assert stored_room.type == "PHÒNG ĐƠN"
+        assert stored_room.status == status
+        assert stored_room.state == state
+        assert stored_room.check_in == check_in
+        assert stored_room.check_out == check_out
 
 
 def test_room_type_delete_requires_login(client, app):
@@ -470,6 +570,7 @@ def test_room_type_delete_requires_csrf_and_preserves_login(client, app):
 
 def test_room_type_delete_rolls_back_on_database_error(client, app, monkeypatch):
     assert _login(client).status_code == 302
+    room_type_id = _add_test_room_type(app, "Thể loại lỗi xóa")
     listing = client.get("/room-types").get_data(as_text=True)
     csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', listing)
     assert csrf_token is not None
@@ -480,7 +581,7 @@ def test_room_type_delete_rolls_back_on_database_error(client, app, monkeypatch)
     monkeypatch.setattr(Session, "commit", fail_commit)
 
     response = client.post(
-        "/room-types/1/delete",
+        f"/room-types/{room_type_id}/delete",
         data={"csrf_token": csrf_token.group(1)},
     )
 
@@ -488,21 +589,21 @@ def test_room_type_delete_rolls_back_on_database_error(client, app, monkeypatch)
     html = client.get("/room-types").get_data(as_text=True)
     assert "Hệ thống tạm thời không thể xóa thể loại phòng" in html
     with app.app_context():
-        assert db.session.get(RoomType, 1) is not None
+        assert db.session.get(RoomType, room_type_id) is not None
 
 
-def test_deleting_all_room_types_stays_empty_after_restart(app, client):
+def test_deleting_unused_room_type_stays_deleted_after_restart(app, client):
     assert _login(client).status_code == 302
+    room_type_id = _add_test_room_type(app, "Thể loại xóa trước khi khởi động lại")
     listing = client.get("/room-types").get_data(as_text=True)
     csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', listing)
     assert csrf_token is not None
 
-    for room_type_id in (1, 2, 3):
-        response = client.post(
-            f"/room-types/{room_type_id}/delete",
-            data={"csrf_token": csrf_token.group(1)},
-        )
-        assert response.status_code == 302
+    response = client.post(
+        f"/room-types/{room_type_id}/delete",
+        data={"csrf_token": csrf_token.group(1)},
+    )
+    assert response.status_code == 302
 
     restarted_app = create_app(
         {
@@ -513,7 +614,10 @@ def test_deleting_all_room_types_stays_empty_after_restart(app, client):
         }
     )
     with restarted_app.app_context():
-        assert db.session.execute(db.select(RoomType)).scalars().all() == []
+        assert db.session.get(RoomType, room_type_id) is None
+        assert db.session.get(RoomType, 1).name == "Phòng đơn"
+        assert db.session.get(RoomType, 2).name == "Phòng đôi"
+        assert db.session.get(RoomType, 3).name == "Phòng VIP"
 
 
 def test_room_type_edit_form_contains_current_values(client):
@@ -527,16 +631,54 @@ def test_room_type_edit_form_contains_current_values(client):
     assert response.status_code == 200
     assert 'action="/room-types/1/edit"' in html
     assert 'id="room-type-name" name="name" type="text" maxlength="120" value="Phòng đơn"' in html
-    assert 'id="room-type-price" name="price" type="number" min="1" step="1" value="500000"' in html
-    assert 'id="room-type-quantity" name="quantity" type="number" min="0" step="1" value="0"' in html
-    assert '<textarea id="room-type-description" name="description" rows="3">Phòng cơ bản đầy đủ tiện nghi</textarea>' in html
-    assert '<option value="active" selected>Đang kinh doanh</option>' in html
-    assert "2 người" in html
+    edit_form = html.split('<form class="room-form room-type-edit-form"', 1)[1].split("</form>", 1)[0]
+    assert edit_form.count("<input") == 2
+    assert 'name="price"' not in edit_form
+    assert 'name="quantity"' not in edit_form
+    assert 'name="capacity"' not in edit_form
+    assert 'name="status"' not in edit_form
+    assert 'name="description"' not in edit_form
     assert "Hủy" in html and "Lưu thay đổi" in html
 
 
 def test_room_type_update_persists_and_updates_listing(client, app):
     assert _login(client).status_code == 302
+    _add_test_room(app, "SYNC-1", "Phòng đơn")
+    _add_test_room(
+        app,
+        "SYNC-2",
+        "PHÒNG ĐƠN",
+        status="Đang thuê",
+        state="occupied",
+        check_in="14:00",
+        check_out="12:00",
+    )
+    _add_test_room(app, "SYNC-3", "Phòng đôi")
+    room_fields = (
+        "number",
+        "floor",
+        "position",
+        "type",
+        "description",
+        "price",
+        "image",
+        "status",
+        "state",
+        "check_in",
+        "check_out",
+        "is_demo",
+    )
+    with app.app_context():
+        before_rooms = {
+            room.number: {
+                field: getattr(room, field)
+                for field in room_fields
+            }
+            for room in db.session.execute(
+                db.select(Room).where(Room.number.in_(("SYNC-1", "SYNC-2", "SYNC-3")))
+            ).scalars()
+        }
+
     form_html = client.get("/room-types/1/edit").get_data(as_text=True)
     csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', form_html)
     assert csrf_token is not None
@@ -545,11 +687,7 @@ def test_room_type_update_persists_and_updates_listing(client, app):
         "/room-types/1/edit",
         data={
             "csrf_token": csrf_token.group(1),
-            "name": "Phòng đơn Plus",
-            "price": "725000",
-            "quantity": "18",
-            "description": "Đã nâng cấp đầy đủ tiện nghi.",
-            "status": "inactive",
+            "name": "  Phòng đơn Plus  ",
         },
     )
 
@@ -558,11 +696,6 @@ def test_room_type_update_persists_and_updates_listing(client, app):
     html = client.get("/room-types").get_data(as_text=True)
     assert "Cập nhật loại phòng thành công." in html
     assert "Phòng đơn Plus" in html
-    assert "725,000 VNĐ" in html
-    assert "18" in html
-    assert "Đã nâng cấp đầy đủ tiện nghi." in html
-    assert "Ngừng kinh doanh" in html
-    assert "2 người" in html
 
     restarted_app = create_app(
         {
@@ -576,25 +709,69 @@ def test_room_type_update_persists_and_updates_listing(client, app):
         persisted = db.session.get(RoomType, 1)
         assert persisted is not None
         assert persisted.name == "Phòng đơn Plus"
-        assert persisted.price == 725000
-        assert persisted.quantity == 18
-        assert persisted.status == "inactive"
+        assert persisted.price == 500000
+        assert persisted.quantity == 0
+        assert persisted.description == "Phòng cơ bản đầy đủ tiện nghi"
+        assert persisted.status == "active"
         assert persisted.capacity == "2 người"
+        updated_rooms = db.session.execute(
+            db.select(Room).where(Room.number.in_(before_rooms))
+        ).scalars()
+        for room in updated_rooms:
+            expected_type = (
+                "Phòng đơn Plus"
+                if before_rooms[room.number]["type"].casefold() == "phòng đơn"
+                else before_rooms[room.number]["type"]
+            )
+            expected = {**before_rooms[room.number], "type": expected_type}
+            assert {field: getattr(room, field) for field in room_fields} == expected
+
+        all_rooms = db.session.execute(db.select(Room)).scalars()
+        assert all(room.type.casefold() != "phòng đơn" for room in all_rooms)
+
+
+def test_room_type_update_rolls_back_name_and_rooms_on_database_error(
+    client, app, monkeypatch
+):
+    assert _login(client).status_code == 302
+    room_id = _add_test_room(app, "ROLLBACK-1", "Phòng VIP")
+    form_html = client.get("/room-types/3/edit").get_data(as_text=True)
+    csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', form_html)
+    assert csrf_token is not None
+
+    def fail_commit(_session):
+        raise SQLAlchemyError("simulated database failure")
+
+    monkeypatch.setattr(Session, "commit", fail_commit)
+    response = client.post(
+        "/room-types/3/edit",
+        data={
+            "csrf_token": csrf_token.group(1),
+            "name": "Phòng VIP cao cấp",
+        },
+    )
+
+    assert response.status_code == 503
+    assert "Hệ thống tạm thời không thể lưu thay đổi." in response.get_data(as_text=True)
+    with app.app_context():
+        room_type = db.session.get(RoomType, 3)
+        room = db.session.get(Room, room_id)
+        assert room_type is not None
+        assert room_type.name == "Phòng VIP"
+        assert room is not None
+        assert room.type == "Phòng VIP"
 
 
 @pytest.mark.parametrize(
-    ("field", "value", "message"),
+    ("value", "message"),
     [
-        ("name", "   ", "Vui lòng nhập tên loại phòng."),
-        ("price", "0", "Giá phòng phải là số nguyên lớn hơn 0."),
-        ("price", "abc", "Giá phòng phải là số nguyên lớn hơn 0."),
-        ("quantity", "-1", "Số lượng phòng phải là số nguyên không âm."),
-        ("quantity", "abc", "Số lượng phòng phải là số nguyên không âm."),
-        ("status", "paused", "Vui lòng chọn trạng thái hợp lệ."),
+        ("   ", "Vui lòng nhập tên thể loại phòng."),
+        ("Phòng ĐÔI", "Tên thể loại phòng đã tồn tại."),
+        ("n" * 121, "Tên thể loại phòng không được vượt quá 120 ký tự."),
     ],
 )
 def test_invalid_room_type_update_keeps_input_and_does_not_save(
-    client, app, field, value, message
+    client, app, value, message
 ):
     assert _login(client).status_code == 302
     form_html = client.get("/room-types/1/edit").get_data(as_text=True)
@@ -602,20 +779,15 @@ def test_invalid_room_type_update_keeps_input_and_does_not_save(
     assert csrf_token is not None
     data = {
         "csrf_token": csrf_token.group(1),
-        "name": "Không được lưu",
-        "price": "800000",
-        "quantity": "12",
-        "description": "Dữ liệu nhập thử",
-        "status": "active",
+        "name": value,
     }
-    data[field] = value
 
     response = client.post("/room-types/1/edit", data=data)
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
     assert message in html
-    assert value in html
+    assert value in html if value.strip() else True
     with app.app_context():
         stored = db.session.get(RoomType, 1)
         assert stored is not None
@@ -645,6 +817,22 @@ def test_room_cards_stay_on_room_management_page(client):
     assert "room-card--occupied" not in room_management_page
     assert "Tổng quan / Sơ đồ phòng" not in room_management_page
     assert 'href="/" aria-current="page"' not in room_management_page
+
+
+def test_room_cards_show_saved_times_and_dash_for_empty_times(client, app):
+    assert _login(client).status_code == 302
+    with app.app_context():
+        room = db.session.execute(
+            db.select(Room).where(Room.number == "101")
+        ).scalar_one()
+        room.check_in = "14:30"
+        room.check_out = ""
+        db.session.commit()
+
+    room_management_page = client.get("/rooms").get_data(as_text=True)
+
+    assert "<dd>14:30</dd>" in room_management_page
+    assert "<dd>—</dd>" in room_management_page
 
 
 def test_room_delete_removes_room_from_management_page(client, app):
@@ -750,7 +938,9 @@ def test_edit_room_can_mark_room_occupied(client):
     assert response.status_code == 302
     html = client.get("/rooms").get_data(as_text=True)
     assert 'aria-label="Phòng 102, Đang thuê"' in html
-    assert html.count("<dd>—</dd>") == 24
+    assert "<dd>16:30</dd>" in html
+    assert "<dd>10:30</dd>" in html
+    assert html.count("<dd>—</dd>") == 22
 
 
 def test_existing_database_rented_rooms_keep_rented_status(client, app):
@@ -796,6 +986,52 @@ def test_edit_room_validates_required_fields(client):
     assert "Giá thuê phải là số nguyên lớn hơn 0." in html
     assert "Vui lòng chọn đúng một thể loại phòng." in html
     assert "Ảnh phải có định dạng JPG, PNG hoặc WEBP hợp lệ." in html
+
+
+@pytest.mark.parametrize(
+    ("path", "room_number", "selected_types"),
+    [
+        ("/rooms/new", "408", []),
+        ("/rooms/new", "409", ["1", "2"]),
+        ("/rooms/new", "410", ["999999"]),
+        ("/rooms/101/edit", "101", []),
+        ("/rooms/101/edit", "101", ["1", "2"]),
+        ("/rooms/101/edit", "101", ["999999"]),
+    ],
+)
+def test_room_forms_reject_invalid_checkbox_selections(
+    client, app, path, room_number, selected_types
+):
+    assert _login(client).status_code == 302
+    form_html = client.get(path).get_data(as_text=True)
+    csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', form_html)
+    assert csrf_token is not None
+    response = client.post(
+        path,
+        data={
+            "csrf_token": csrf_token.group(1),
+            "room_number": room_number,
+            "description": "Phòng kiểm thử lựa chọn checkbox",
+            "price": "700000",
+            "room_type": selected_types,
+            "status": "Phòng trống",
+            "image": (BytesIO(b"\x89PNG\r\n\x1a\nvalid image"), "room.png"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert "Vui lòng chọn đúng một thể loại phòng." in response.get_data(as_text=True)
+    with app.app_context():
+        if path == "/rooms/new":
+            assert db.session.execute(
+                db.select(Room).where(Room.number == room_number)
+            ).scalar_one_or_none() is None
+        else:
+            stored = db.session.execute(
+                db.select(Room).where(Room.number == room_number)
+            ).scalar_one()
+            assert stored.type == "Phòng đơn"
 
 
 def test_edit_room_updates_data_uploads_image_and_flashes_success(client, app):

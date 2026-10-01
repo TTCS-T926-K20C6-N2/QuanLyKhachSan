@@ -140,7 +140,7 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .floor-section { min-width: 0; }
 .floor-title { display: flex; align-items: center; gap: 9px; margin: 0 0 11px; color: #334b63; font-size: 0.86rem; font-weight: 800; letter-spacing: 0.055em; text-transform: uppercase; }
 .floor-title::after { content: ""; height: 1px; flex: 1; background: #e5ebf1; }
-.room-grid { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 12px; }
+.room-grid { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); align-items: start; gap: 12px; }
 .room-card { position: relative; display: flex; min-width: 0; flex-direction: column; padding: 15px 15px 14px 17px; border: 1px solid #dce5ed; border-left: 4px solid var(--blue-700); border-radius: 10px; background: #ffffff; transition: transform 140ms ease, box-shadow 140ms ease; }
 .room-card:hover { transform: translateY(-2px); box-shadow: 0 9px 20px rgba(33, 63, 92, 0.1); }
 .room-card--empty { border-color: #b8e3ca; border-left-color: var(--green); background: var(--green-soft); }
@@ -167,7 +167,7 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-card__delete .action-button { width: 100%; }
 .room-actions .action-button { flex: 1; }
 .room-type-table-wrap { overflow-x: auto; }
-.room-type-table { width: 100%; min-width: 860px; border-collapse: collapse; }
+.room-type-table { width: 100%; min-width: 560px; border-collapse: collapse; }
 .room-type-table th,
 .room-type-table td { padding: 14px 22px; border-bottom: 1px solid #e4ebf1; text-align: left; vertical-align: middle; }
 .room-type-table th { background: #f5f8fb; color: #52667a; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }

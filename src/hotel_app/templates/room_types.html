@@ -7,7 +7,7 @@
     <div>
       <p class="page-kicker">Danh mục phòng</p>
       <h1 id="room-types-title">Quản lý Thể loại phòng</h1>
-      <p class="page-description">Danh sách loại phòng, đơn giá, số lượng và sức chứa.</p>
+      <p class="page-description">Danh sách các thể loại phòng hiện có.</p>
     </div>
     <a class="action-button action-button--primary room-type-add" href="{{ url_for('create_room_type') }}">
       <span aria-hidden="true">+</span> Thêm thể loại phòng
@@ -29,41 +29,16 @@
       <header class="panel-header">
         <div>
           <h2 id="room-type-edit-title">Cập nhật loại phòng</h2>
-          <p>Chỉnh sửa thông tin loại phòng đã chọn.</p>
+          <p>Cập nhật tên thể loại phòng đã chọn.</p>
         </div>
       </header>
       <form class="room-form room-type-edit-form" method="post" action="{{ url_for('edit_room_type', room_type_id=edit_room_type.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="room-form__grid">
           <div class="form-field">
-            <label for="room-type-name">Tên loại phòng</label>
+            <label for="room-type-name">Tên thể loại phòng</label>
             <input id="room-type-name" name="name" type="text" maxlength="120" value="{{ form_values.name }}" required>
             {% if errors.name %}<span class="field-error">{{ errors.name }}</span>{% endif %}
-          </div>
-          <div class="form-field">
-            <label for="room-type-price">Giá phòng / đêm (VNĐ)</label>
-            <input id="room-type-price" name="price" type="number" min="1" step="1" value="{{ form_values.price }}" required>
-            {% if errors.price %}<span class="field-error">{{ errors.price }}</span>{% endif %}
-          </div>
-          <div class="form-field">
-            <label for="room-type-quantity">Số lượng phòng</label>
-            <input id="room-type-quantity" name="quantity" type="number" min="0" step="1" value="{{ form_values.quantity }}" required>
-            {% if errors.quantity %}<span class="field-error">{{ errors.quantity }}</span>{% endif %}
-          </div>
-          <div class="form-field">
-            <label for="room-type-status">Trạng thái loại phòng</label>
-            <select id="room-type-status" name="status" required>
-              {% if form_values.status not in ['active', 'inactive'] %}
-                <option value="{{ form_values.status }}" selected>{{ form_values.status }}</option>
-              {% endif %}
-              <option value="active"{% if form_values.status == 'active' %} selected{% endif %}>Đang kinh doanh</option>
-              <option value="inactive"{% if form_values.status == 'inactive' %} selected{% endif %}>Ngừng kinh doanh</option>
-            </select>
-            {% if errors.status %}<span class="field-error">{{ errors.status }}</span>{% endif %}
-          </div>
-          <div class="form-field form-field--wide">
-            <label for="room-type-description">Mô tả loại phòng</label>
-            <textarea id="room-type-description" name="description" rows="3">{{ form_values.description }}</textarea>
           </div>
         </div>
         <footer class="room-form__footer">
@@ -80,7 +55,7 @@
         <div>
           <p class="page-kicker">Danh mục phòng</p>
           <h2 id="room-type-create-title">Thêm thể loại phòng</h2>
-          <p class="room-dialog__subtitle">Nhập thông tin cho thể loại phòng mới.</p>
+          <p class="room-dialog__subtitle">Nhập tên thể loại phòng mới.</p>
         </div>
         <button class="room-dialog__close" id="close-room-type-dialog" type="button" aria-label="Đóng" title="Đóng">
           <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
@@ -91,36 +66,9 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="room-form__grid">
           <div class="form-field">
-            <label for="room-type-name">Tên loại phòng</label>
+            <label for="room-type-name">Tên thể loại phòng</label>
             <input id="room-type-name" name="name" type="text" maxlength="120" value="{{ form_values.name }}" required>
             {% if errors.name %}<span class="field-error">{{ errors.name }}</span>{% endif %}
-          </div>
-          <div class="form-field">
-            <label for="room-type-price">Giá phòng / đêm (VNĐ)</label>
-            <input id="room-type-price" name="price" type="number" min="1" step="1" value="{{ form_values.price }}" required>
-            {% if errors.price %}<span class="field-error">{{ errors.price }}</span>{% endif %}
-          </div>
-          <div class="form-field">
-            <label for="room-type-quantity">Số lượng phòng</label>
-            <input id="room-type-quantity" name="quantity" type="number" min="0" step="1" value="{{ form_values.quantity }}" required>
-            {% if errors.quantity %}<span class="field-error">{{ errors.quantity }}</span>{% endif %}
-          </div>
-          <div class="form-field">
-            <label for="room-type-capacity">Sức chứa</label>
-            <input id="room-type-capacity" name="capacity" type="text" maxlength="40" value="{{ form_values.capacity }}" required>
-            {% if errors.capacity %}<span class="field-error">{{ errors.capacity }}</span>{% endif %}
-          </div>
-          <div class="form-field">
-            <label for="room-type-status">Trạng thái loại phòng</label>
-            <select id="room-type-status" name="status" required>
-              <option value="active"{% if form_values.status == 'active' %} selected{% endif %}>Đang kinh doanh</option>
-              <option value="inactive"{% if form_values.status == 'inactive' %} selected{% endif %}>Ngừng kinh doanh</option>
-            </select>
-            {% if errors.status %}<span class="field-error">{{ errors.status }}</span>{% endif %}
-          </div>
-          <div class="form-field form-field--wide">
-            <label for="room-type-description">Mô tả loại phòng</label>
-            <textarea id="room-type-description" name="description" rows="3">{{ form_values.description }}</textarea>
           </div>
         </div>
         <footer class="room-form__footer">
@@ -157,11 +105,6 @@
           <tr>
             <th scope="col">STT</th>
             <th scope="col">Tên thể loại phòng</th>
-            <th scope="col">Đơn giá / đêm</th>
-            <th scope="col">Số lượng phòng</th>
-            <th scope="col">Sức chứa</th>
-            <th scope="col">Trạng thái</th>
-            <th scope="col">Mô tả</th>
             <th scope="col">Hành động</th>
           </tr>
         </thead>
@@ -170,11 +113,6 @@
             <tr>
               <td>{{ loop.index }}</td>
               <td><strong>{{ room_type.name }}</strong></td>
-              <td>{{ "{:,.0f}".format(room_type.price) }} VNĐ</td>
-              <td>{{ room_type.quantity }}</td>
-              <td>{{ room_type.capacity }}</td>
-              <td>{% if room_type.status == 'active' %}Đang kinh doanh{% else %}Ngừng kinh doanh{% endif %}</td>
-              <td>{{ room_type.description }}</td>
               <td>
                 <div class="table-actions">
                   <a class="action-button action-button--edit" href="{{ url_for('edit_room_type', room_type_id=room_type.id) }}">Cập nhật</a>

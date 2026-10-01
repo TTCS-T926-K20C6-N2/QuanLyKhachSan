@@ -142,7 +142,6 @@ ROOM_TYPE_CATALOG = (
         "status": "active",
     },
 )
-ROOM_TYPE_STATUSES = {"active", "inactive"}
 
 
 def _environment(test_config: dict[str, Any] | None) -> str:
@@ -433,6 +432,14 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             db.select(RoomType).order_by(RoomType.id)
         ).scalars()
         return {str(room_type.id): room_type.name for room_type in room_types}
+
+    def rooms_using_room_type(name: str) -> list[Room]:
+        canonical_name = name.casefold()
+        return [
+            room
+            for room in db.session.execute(db.select(Room)).scalars()
+            if room.type.casefold() == canonical_name
+        ]
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -973,61 +980,31 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         errors: dict[str, str] = {}
         form_values = {
             "name": request.form.get("name", ""),
-            "price": request.form.get("price", ""),
-            "quantity": request.form.get("quantity", "0"),
-            "capacity": request.form.get("capacity", ""),
-            "description": request.form.get("description", ""),
-            "status": request.form.get("status", "active"),
         }
         service_error = None
         service_status = 200
 
         if request.method == "POST":
             name = form_values["name"].strip()
-            price_input = form_values["price"].strip()
-            quantity_input = form_values["quantity"].strip()
-            capacity = form_values["capacity"].strip()
 
             if not name:
-                errors["name"] = "Vui lòng nhập tên loại phòng."
+                errors["name"] = "Vui lòng nhập tên thể loại phòng."
             elif len(name) > 120:
-                errors["name"] = "Tên loại phòng không được vượt quá 120 ký tự."
+                errors["name"] = "Tên thể loại phòng không được vượt quá 120 ký tự."
             elif any(
                 candidate.name.casefold() == name.casefold()
                 for candidate in db.session.execute(db.select(RoomType)).scalars()
             ):
-                errors["name"] = "Tên loại phòng đã tồn tại."
-
-            try:
-                price = int(price_input)
-                if price <= 0 or price > 2147483647:
-                    raise ValueError
-            except ValueError:
-                errors["price"] = "Giá phòng phải là số nguyên lớn hơn 0."
-
-            try:
-                quantity = int(quantity_input)
-                if quantity < 0 or quantity > 2147483647:
-                    raise ValueError
-            except ValueError:
-                errors["quantity"] = "Số lượng phòng phải là số nguyên không âm."
-
-            if not capacity:
-                errors["capacity"] = "Vui lòng nhập sức chứa."
-            elif len(capacity) > 40:
-                errors["capacity"] = "Sức chứa không được vượt quá 40 ký tự."
-
-            if form_values["status"] not in ROOM_TYPE_STATUSES:
-                errors["status"] = "Vui lòng chọn trạng thái hợp lệ."
+                errors["name"] = "Tên thể loại phòng đã tồn tại."
 
             if not errors:
                 room_type = RoomType(
                     name=name,
-                    price=price,
-                    quantity=quantity,
-                    capacity=capacity,
-                    description=form_values["description"].strip(),
-                    status=form_values["status"],
+                    price=0,
+                    quantity=0,
+                    capacity="",
+                    description="",
+                    status="active",
                 )
                 db.session.add(room_type)
                 try:
@@ -1074,6 +1051,13 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return redirect(url_for("room_types"))
 
         room_type_name = room_type.name
+        if rooms_using_room_type(room_type_name):
+            flash(
+                "Không thể xóa thể loại phòng này vì đang có phòng sử dụng.",
+                "error",
+            )
+            return redirect(url_for("room_types"))
+
         try:
             db.session.delete(room_type)
             db.session.commit()
@@ -1109,55 +1093,32 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         errors: dict[str, str] = {}
         form_values = {
             "name": request.form.get("name", room_type.name),
-            "price": request.form.get("price", str(room_type.price)),
-            "quantity": request.form.get("quantity", str(room_type.quantity)),
-            "description": request.form.get("description", room_type.description),
-            "status": request.form.get("status", room_type.status),
         }
         service_error = None
         service_status = 200
 
         if request.method == "POST":
             name = form_values["name"].strip()
-            price_input = form_values["price"].strip()
-            quantity_input = form_values["quantity"].strip()
 
             if not name:
-                errors["name"] = "Vui lòng nhập tên loại phòng."
+                errors["name"] = "Vui lòng nhập tên thể loại phòng."
             elif len(name) > 120:
-                errors["name"] = "Tên loại phòng không được vượt quá 120 ký tự."
+                errors["name"] = "Tên thể loại phòng không được vượt quá 120 ký tự."
             elif any(
                 candidate.name.casefold() == name.casefold()
                 for candidate in db.session.execute(
                     db.select(RoomType).where(RoomType.id != room_type.id)
                 ).scalars()
             ):
-                errors["name"] = "Tên loại phòng đã tồn tại."
-
-            try:
-                price = int(price_input)
-                if price <= 0 or price > 2147483647:
-                    raise ValueError
-            except ValueError:
-                errors["price"] = "Giá phòng phải là số nguyên lớn hơn 0."
-
-            try:
-                quantity = int(quantity_input)
-                if quantity < 0 or quantity > 2147483647:
-                    raise ValueError
-            except ValueError:
-                errors["quantity"] = "Số lượng phòng phải là số nguyên không âm."
-
-            if form_values["status"] not in ROOM_TYPE_STATUSES:
-                errors["status"] = "Vui lòng chọn trạng thái hợp lệ."
+                errors["name"] = "Tên thể loại phòng đã tồn tại."
 
             if not errors:
-                room_type.name = name
-                room_type.price = price
-                room_type.quantity = quantity
-                room_type.description = form_values["description"].strip()
-                room_type.status = form_values["status"]
+                previous_name = room_type.name
                 try:
+                    rooms_to_update = rooms_using_room_type(previous_name)
+                    room_type.name = name
+                    for room in rooms_to_update:
+                        room.type = name
                     db.session.commit()
                 except IntegrityError:
                     db.session.rollback()
