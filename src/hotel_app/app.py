@@ -8,12 +8,13 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
 from flask_wtf.csrf import CSRFError
+from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .extensions import csrf, db
-from .models import User, normalize_email
+from .models import Room, RoomType, User, normalize_email
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -24,18 +25,18 @@ DEVELOPMENT_DEMO_EMAIL = "demo@example.test"
 DEVELOPMENT_DEMO_PASSWORD = "Demo1@Hotel2026"
 TRUE_VALUES = {"1", "true", "yes", "on"}
 ROOMS = (
-    {"number": "101", "floor": "Tầng 1", "type": "Phòng tiêu chuẩn"},
-    {"number": "102", "floor": "Tầng 1", "type": "Phòng 2 giường đơn"},
-    {"number": "103", "floor": "Tầng 1", "type": "Phòng tiêu chuẩn"},
-    {"number": "104", "floor": "Tầng 1", "type": "Phòng vip"},
-    {"number": "201", "floor": "Tầng 2", "type": "Phòng 1 giường đôi"},
-    {"number": "202", "floor": "Tầng 2", "type": "Phòng tiêu chuẩn"},
-    {"number": "203", "floor": "Tầng 2", "type": "Phòng vip"},
-    {"number": "204", "floor": "Tầng 2", "type": "Phòng 2 giường đơn"},
-    {"number": "301", "floor": "Tầng 3", "type": "Phòng tiêu chuẩn"},
-    {"number": "302", "floor": "Tầng 3", "type": "Phòng vip"},
-    {"number": "303", "floor": "Tầng 3", "type": "Phòng 1 giường đôi"},
-    {"number": "304", "floor": "Tầng 3", "type": "Phòng tiêu chuẩn"},
+    {"number": "101", "floor": "Tầng 1", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
+    {"number": "102", "floor": "Tầng 1", "type": "Phòng đôi", "status": "Phòng trống", "state": "empty"},
+    {"number": "103", "floor": "Tầng 1", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
+    {"number": "104", "floor": "Tầng 1", "type": "VIP", "status": "Phòng trống", "state": "empty"},
+    {"number": "201", "floor": "Tầng 2", "type": "Phòng đôi", "status": "Phòng trống", "state": "empty"},
+    {"number": "202", "floor": "Tầng 2", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
+    {"number": "203", "floor": "Tầng 2", "type": "VIP", "status": "Phòng trống", "state": "empty"},
+    {"number": "204", "floor": "Tầng 2", "type": "Phòng đôi", "status": "Phòng trống", "state": "empty"},
+    {"number": "301", "floor": "Tầng 3", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
+    {"number": "302", "floor": "Tầng 3", "type": "VIP", "status": "Phòng trống", "state": "empty"},
+    {"number": "303", "floor": "Tầng 3", "type": "Phòng đôi", "status": "Phòng trống", "state": "empty"},
+    {"number": "304", "floor": "Tầng 3", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
 )
 ROOM_TYPE_CATALOG = (
     {
@@ -103,6 +104,22 @@ def _seed_demo_user(app: Flask) -> None:
     demo_user = User(email=demo_email)
     demo_user.set_password(demo_password)
     db.session.add(demo_user)
+    db.session.commit()
+
+
+def _seed_room_types() -> None:
+    if db.session.execute(db.select(RoomType.id).limit(1)).first() is not None:
+        return
+
+    db.session.add_all(RoomType(**room_type) for room_type in ROOM_TYPE_CATALOG)
+    db.session.commit()
+
+
+def _seed_rooms() -> None:
+    if db.session.execute(db.select(Room.id).limit(1)).first() is not None:
+        return
+
+    db.session.add_all(Room(**room) for room in ROOMS)
     db.session.commit()
 
 
@@ -255,7 +272,31 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
-        return render_template("home.html", user=user)
+
+        rooms = db.session.execute(
+            db.select(Room).order_by(Room.number)
+        ).scalars().all()
+        rooms_by_floor: dict[str, list[Room]] = {}
+        for room in rooms:
+            rooms_by_floor.setdefault(room.floor, []).append(room)
+        floors = [
+            {"name": floor_name, "rooms": floor_rooms}
+            for floor_name, floor_rooms in rooms_by_floor.items()
+        ]
+        return render_template("home.html", user=user, floors=floors)
+
+    @app.route("/rooms/<int:room_id>/delete", methods=["POST"])
+    def delete_room(room_id: int):
+        if current_user() is None:
+            return redirect(url_for("login"))
+
+        room = db.session.get(Room, room_id)
+        if room is None:
+            abort(404)
+
+        db.session.delete(room)
+        db.session.commit()
+        return redirect(url_for("home"))
 
     @app.route("/account")
     def account():
@@ -276,7 +317,23 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if user is None:
             return redirect(url_for("login"))
 
-        return render_template("room_types.html", user=user, room_types=ROOM_TYPE_CATALOG)
+        room_types = db.session.execute(
+            db.select(RoomType).order_by(RoomType.id)
+        ).scalars().all()
+        return render_template("room_types.html", user=user, room_types=room_types)
+
+    @app.route("/room-types/<int:room_type_id>/delete", methods=["POST"])
+    def delete_room_type(room_type_id: int):
+        if current_user() is None:
+            return redirect(url_for("login"))
+
+        room_type = db.session.get(RoomType, room_type_id)
+        if room_type is None:
+            abort(404)
+
+        db.session.delete(room_type)
+        db.session.commit()
+        return redirect(url_for("room_types"))
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(_error: CSRFError):
@@ -319,8 +376,18 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         )
 
     with app.app_context():
+        room_types_table_exists = sqlalchemy_inspect(db.engine).has_table(
+            RoomType.__tablename__
+        )
+        rooms_table_exists = sqlalchemy_inspect(db.engine).has_table(
+            Room.__tablename__
+        )
         db.create_all()
         _seed_demo_user(app)
+        if not room_types_table_exists:
+            _seed_room_types()
+        if not rooms_table_exists:
+            _seed_rooms()
 
     return app
 

@@ -3,35 +3,6 @@
 {% block title %}Danh sách phòng | Hotel Management{% endblock %}
 
 {% block content %}
-  {% set floors = [
-    {
-      "name": "Tầng 1",
-      "rooms": [
-        {"number": "101", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
-        {"number": "102", "type": "Phòng đôi", "status": "Phòng trống", "state": "empty"},
-        {"number": "103", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
-        {"number": "104", "type": "VIP", "status": "Phòng trống", "state": "empty"}
-      ]
-    },
-    {
-      "name": "Tầng 2",
-      "rooms": [
-        {"number": "201", "type": "Phòng đôi", "status": "Phòng trống", "state": "empty"},
-        {"number": "202", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
-        {"number": "203", "type": "VIP", "status": "Phòng trống", "state": "empty"},
-        {"number": "204", "type": "Phòng đôi", "status": "Phòng trống", "state": "empty"}
-      ]
-    },
-    {
-      "name": "Tầng 3",
-      "rooms": [
-        {"number": "301", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"},
-        {"number": "302", "type": "VIP", "status": "Phòng trống", "state": "empty"},
-        {"number": "303", "type": "Phòng đôi", "status": "Phòng trống", "state": "empty"},
-        {"number": "304", "type": "Phòng đơn", "status": "Phòng trống", "state": "empty"}
-      ]
-    }
-  ] %}
   <section class="page-heading" aria-labelledby="home-title">
     <div>
       <p class="page-kicker">Quản lý phòng</p>
@@ -47,7 +18,7 @@
   </section>
 
   <div class="demo-notice" role="note">
-    <span>Phòng, trạng thái, loại phòng và các nút thao tác bên dưới chưa kết nối dữ liệu hoặc nghiệp vụ.</span>
+    <span>Thông tin phòng và trạng thái đang dùng dữ liệu mẫu.</span>
   </div>
 
   <section id="room-list" class="dashboard-panel" aria-labelledby="room-list-title">
@@ -85,7 +56,10 @@
                 <span class="room-status room-status--{{ room.state }}">{{ room.status }}</span>
                 <div class="room-actions" aria-label="Thao tác giao diện cho phòng {{ room.number }}">
                   <a class="action-button action-button--edit" href="#" aria-disabled="true">Sửa</a>
-                  <a class="action-button action-button--delete" href="#" aria-disabled="true">Xóa</a>
+                  <form class="room-delete-form" method="post" action="{{ url_for('delete_room', room_id=room.id) }}" onsubmit="return confirm('Bạn có chắc chắn muốn xóa phòng này?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="action-button action-button--delete" type="submit">Xóa</button>
+                  </form>
                 </div>
               </article>
             {% endfor %}

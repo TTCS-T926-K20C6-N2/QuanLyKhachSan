@@ -45,7 +45,10 @@
               <td>
                 <div class="table-actions">
                   <button class="action-button action-button--edit" type="button" disabled>Cập nhật</button>
-                  <button class="action-button action-button--delete" type="button" disabled>Xóa</button>
+                  <form method="post" action="{{ url_for('delete_room_type', room_type_id=room_type.id) }}" onsubmit="return confirm('Bạn có chắc chắn muốn xóa thể loại phòng này?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="action-button action-button--delete" type="submit">Xóa</button>
+                  </form>
                 </div>
               </td>
             </tr>

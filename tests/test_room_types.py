@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 
 from conftest import DEMO_EMAIL, DEMO_PASSWORD
+from hotel_app.extensions import db
+from hotel_app.models import RoomType
 
 
 def _csrf_token(client) -> str:
@@ -54,7 +56,7 @@ def test_room_types_page_shows_type_management_table(client):
     assert 'name="room_type"' not in html
 
 
-def test_room_type_management_actions_are_disabled(client):
+def test_room_type_management_delete_requires_confirmation(client):
     assert _login(client).status_code == 302
 
     html = client.get("/room-types").get_data(as_text=True)
@@ -64,7 +66,30 @@ def test_room_type_management_actions_are_disabled(client):
         html,
     )
     assert html.count('class="action-button action-button--edit" type="button" disabled') == 2
-    assert html.count('class="action-button action-button--delete" type="button" disabled') == 2
+    assert html.count('class="action-button action-button--delete" type="submit"') == 2
+    assert html.count("Bạn có chắc chắn muốn xóa thể loại phòng này?") == 2
+
+
+def test_room_type_can_be_deleted(client, app):
+    assert _login(client).status_code == 302
+    with app.app_context():
+        room_type = db.session.execute(
+            db.select(RoomType).where(RoomType.name == "Phòng tiêu chuẩn")
+        ).scalar_one()
+        room_type_id = room_type.id
+
+    html = client.get("/room-types").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
+    assert token is not None
+    response = client.post(
+        f"/room-types/{room_type_id}/delete",
+        data={"csrf_token": token.group(1)},
+    )
+
+    assert response.status_code == 302
+    page = client.get("/room-types").get_data(as_text=True)
+    assert "<strong>Phòng tiêu chuẩn</strong>" not in page
+    assert "Phòng VIP" in page
 
 
 def test_room_cards_stay_on_room_management_page(client):
