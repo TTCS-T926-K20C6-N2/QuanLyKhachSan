@@ -5,7 +5,11 @@ from __future__ import annotations
 import re
 from io import BytesIO
 
-from conftest import DEMO_EMAIL, DEMO_PASSWORD
+import pytest
+
+from conftest import DEMO_EMAIL, DEMO_PASSWORD, create_app
+from hotel_app.extensions import db
+from hotel_app.models import RoomType
 
 
 def _csrf_token(client) -> str:
@@ -34,6 +38,10 @@ def test_room_types_requires_login(client):
 
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/login")
+
+    edit_response = client.get("/room-types/1/edit")
+    assert edit_response.status_code == 302
+    assert edit_response.headers["Location"].endswith("/login")
 
 
 def test_room_management_requires_login(client):
@@ -125,7 +133,9 @@ def test_room_types_page_shows_type_management_table(client):
     assert "Danh sách thể loại phòng" in html
     assert "Tên thể loại phòng" in html
     assert "Đơn giá / đêm" in html
+    assert "Số lượng phòng" in html
     assert "Sức chứa" in html
+    assert "Trạng thái" in html
     assert "Phòng tiêu chuẩn" in html
     assert "500,000 VNĐ" in html
     assert "Phòng VIP" in html
@@ -133,7 +143,7 @@ def test_room_types_page_shows_type_management_table(client):
     assert 'name="room_type"' not in html
 
 
-def test_room_type_management_actions_are_disabled(client):
+def test_room_type_management_exposes_edit_and_keeps_delete_disabled(client):
     assert _login(client).status_code == 302
 
     html = client.get("/room-types").get_data(as_text=True)
@@ -142,8 +152,118 @@ def test_room_type_management_actions_are_disabled(client):
         r'<button class="action-button action-button--primary room-type-add" type="button" disabled>',
         html,
     )
-    assert html.count('class="action-button action-button--edit" type="button" disabled') == 2
+    assert html.count('class="action-button action-button--edit" href="/room-types/') == 2
     assert html.count('class="action-button action-button--delete" type="button" disabled') == 2
+
+
+def test_room_type_edit_form_contains_current_values(client):
+    assert _login(client).status_code == 302
+
+    listing = client.get("/room-types").get_data(as_text=True)
+    assert 'href="/room-types/1/edit"' in listing
+    response = client.get("/room-types/1/edit")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'action="/room-types/1/edit"' in html
+    assert 'id="room-type-name" name="name" type="text" maxlength="120" value="Phòng tiêu chuẩn"' in html
+    assert 'id="room-type-price" name="price" type="number" min="1" step="1" value="500000"' in html
+    assert 'id="room-type-quantity" name="quantity" type="number" min="0" step="1" value="0"' in html
+    assert '<textarea id="room-type-description" name="description" rows="3">Phòng cơ bản đầy đủ tiện nghi</textarea>' in html
+    assert '<option value="active" selected>Đang kinh doanh</option>' in html
+    assert "2 người" in html
+    assert "Hủy" in html and "Lưu thay đổi" in html
+
+
+def test_room_type_update_persists_and_updates_listing(client, app):
+    assert _login(client).status_code == 302
+    form_html = client.get("/room-types/1/edit").get_data(as_text=True)
+    csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', form_html)
+    assert csrf_token is not None
+
+    response = client.post(
+        "/room-types/1/edit",
+        data={
+            "csrf_token": csrf_token.group(1),
+            "name": "Phòng tiêu chuẩn Plus",
+            "price": "725000",
+            "quantity": "18",
+            "description": "Đã nâng cấp đầy đủ tiện nghi.",
+            "status": "inactive",
+        },
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/room-types")
+    html = client.get("/room-types").get_data(as_text=True)
+    assert "Cập nhật loại phòng thành công." in html
+    assert "Phòng tiêu chuẩn Plus" in html
+    assert "725,000 VNĐ" in html
+    assert "18" in html
+    assert "Đã nâng cấp đầy đủ tiện nghi." in html
+    assert "Ngừng kinh doanh" in html
+    assert "2 người" in html
+
+    restarted_app = create_app(
+        {
+            "APP_ENV": "testing",
+            "TESTING": True,
+            "SECRET_KEY": "test-only-secret-key",
+            "SQLALCHEMY_DATABASE_URI": app.config["SQLALCHEMY_DATABASE_URI"],
+        }
+    )
+    with restarted_app.app_context():
+        persisted = db.session.get(RoomType, 1)
+        assert persisted is not None
+        assert persisted.name == "Phòng tiêu chuẩn Plus"
+        assert persisted.price == 725000
+        assert persisted.quantity == 18
+        assert persisted.status == "inactive"
+        assert persisted.capacity == "2 người"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("name", "   ", "Vui lòng nhập tên loại phòng."),
+        ("price", "0", "Giá phòng phải là số nguyên lớn hơn 0."),
+        ("price", "abc", "Giá phòng phải là số nguyên lớn hơn 0."),
+        ("quantity", "-1", "Số lượng phòng phải là số nguyên không âm."),
+        ("quantity", "abc", "Số lượng phòng phải là số nguyên không âm."),
+        ("status", "paused", "Vui lòng chọn trạng thái hợp lệ."),
+    ],
+)
+def test_invalid_room_type_update_keeps_input_and_does_not_save(
+    client, app, field, value, message
+):
+    assert _login(client).status_code == 302
+    form_html = client.get("/room-types/1/edit").get_data(as_text=True)
+    csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', form_html)
+    assert csrf_token is not None
+    data = {
+        "csrf_token": csrf_token.group(1),
+        "name": "Không được lưu",
+        "price": "800000",
+        "quantity": "12",
+        "description": "Dữ liệu nhập thử",
+        "status": "active",
+    }
+    data[field] = value
+
+    response = client.post("/room-types/1/edit", data=data)
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert message in html
+    assert value in html
+    with app.app_context():
+        stored = db.session.get(RoomType, 1)
+        assert stored is not None
+        assert stored.name == "Phòng tiêu chuẩn"
+        assert stored.price == 500000
+        assert stored.quantity == 0
+        assert stored.description == "Phòng cơ bản đầy đủ tiện nghi"
+        assert stored.status == "active"
 
 
 def test_room_cards_stay_on_room_management_page(client):

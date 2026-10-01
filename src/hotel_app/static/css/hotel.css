@@ -78,7 +78,8 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .form-field > label,
 .form-field legend { color: #334b63; font-size: 0.86rem; font-weight: 750; }
 .form-field input:not([type="checkbox"]):not([type="file"]),
-.form-field textarea { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #c8d6e3; border-radius: 7px; background: #ffffff; color: #17243a; font: inherit; }
+.form-field textarea,
+.form-field select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #c8d6e3; border-radius: 7px; background: #ffffff; color: #17243a; font: inherit; }
 .form-field textarea { min-height: 98px; resize: vertical; }
 .form-field input:focus,
 .form-field textarea:focus { border-color: var(--blue-700); outline: 0; box-shadow: 0 0 0 3px rgba(18, 105, 167, 0.14); }
@@ -98,6 +99,8 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-types-page,
 .room-type-results { margin-top: 22px; }
 .room-type-add { flex: 0 0 auto; }
+.room-type-edit-panel { margin-bottom: 22px; }
+.room-type-edit-form { padding: 22px; }
 .room-type-search { display: flex; align-items: flex-end; gap: 14px; padding: 20px 22px 22px; }
 .room-type-search__field { flex: 1; max-width: 520px; }
 .room-type-search label { display: block; margin-bottom: 7px; color: #334b63; font-size: 0.84rem; font-weight: 750; }
@@ -164,7 +167,7 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-card__delete .action-button { width: 100%; }
 .room-actions .action-button { flex: 1; }
 .room-type-table-wrap { overflow-x: auto; }
-.room-type-table { width: 100%; min-width: 560px; border-collapse: collapse; }
+.room-type-table { width: 100%; min-width: 860px; border-collapse: collapse; }
 .room-type-table th,
 .room-type-table td { padding: 14px 22px; border-bottom: 1px solid #e4ebf1; text-align: left; vertical-align: middle; }
 .room-type-table th { background: #f5f8fb; color: #52667a; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
