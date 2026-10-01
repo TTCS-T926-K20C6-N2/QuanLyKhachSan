@@ -78,6 +78,9 @@
         <circle cx="12" cy="12" r="9"></circle>
         <path d="m8 12 3 3 5-6"></path>
       </symbol>
+      <symbol id="icon-close" viewBox="0 0 24 24">
+        <path d="m6 6 12 12M18 6 6 18"></path>
+      </symbol>
     </svg>
 
     <div class="dashboard-shell">
@@ -107,7 +110,7 @@
       <aside class="sidebar">
         <nav class="sidebar-nav" aria-label="Điều hướng chính">
           <div class="nav-section">
-            <a class="nav-link{% if request.endpoint == 'room_management' %} nav-link--active{% endif %}" href="{{ url_for('room_management') }}"{% if request.endpoint == 'room_management' %} aria-current="page"{% endif %}>
+            <a class="nav-link{% if request.endpoint in ['room_management', 'create_room'] %} nav-link--active{% endif %}" href="{{ url_for('room_management') }}"{% if request.endpoint in ['room_management', 'create_room'] %} aria-current="page"{% endif %}>
               <svg class="icon"><use href="#icon-rooms"></use></svg>
               <span>Quản lý phòng</span>
             </a>

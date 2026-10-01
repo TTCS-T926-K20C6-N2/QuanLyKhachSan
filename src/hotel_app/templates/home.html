@@ -9,11 +9,22 @@
       <h1 id="home-title">Quản lý phòng</h1>
       <p class="page-description">Theo dõi trạng thái và thời gian lưu trú của các phòng theo từng tầng.</p>
     </div>
-    <p class="login-success">
-      <svg class="icon" aria-hidden="true"><use href="#icon-check"></use></svg>
-      Đăng nhập thành công
-    </p>
+    <div class="page-heading__actions">
+      <p class="login-success">
+        <svg class="icon" aria-hidden="true"><use href="#icon-check"></use></svg>
+        Đăng nhập thành công
+      </p>
+      <a class="action-button action-button--primary" id="open-room-dialog" href="{{ url_for('create_room') }}">
+        <span aria-hidden="true">+</span> Thêm phòng
+      </a>
+    </div>
   </section>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="form-alert form-alert--{{ category }}" role="status">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
 
   <div class="demo-notice" role="note">
     <span>Dữ liệu phòng đang hiển thị để minh họa giao diện.</span>
@@ -23,7 +34,7 @@
     <header class="panel-header">
       <div>
         <h2 id="room-list-title">Danh sách phòng</h2>
-        <p>12 phòng · Chọn màu để nhận biết trạng thái phòng</p>
+        <p>{{ room_count }} phòng · Chọn màu để nhận biết trạng thái phòng</p>
       </div>
       <div class="room-legend" aria-label="Chú thích trạng thái phòng">
         <span class="legend-item"><span class="legend-dot legend-dot--empty"></span>Phòng trống</span>
@@ -45,7 +56,12 @@
                   <strong class="room-number">{{ room.number }}</strong>
                   <span class="room-status room-status--{{ room.state }}">{{ room.status }}</span>
                 </div>
+                {% if room.image %}
+                  <img class="room-image" src="{{ url_for('room_image', filename=room.image) }}" alt="Ảnh phòng {{ room.number }}">
+                {% endif %}
                 <p class="room-type">{{ room.type }}</p>
+                {% if room.description %}<p class="room-description">{{ room.description }}</p>{% endif %}
+                {% if room.price %}<p class="room-price">{{ "{:,.0f}".format(room.price) }} VNĐ / đêm</p>{% endif %}
                 <dl class="room-times">
                   <div>
                     <dt>Giờ vào</dt>
@@ -76,5 +92,37 @@
       {% endfor %}
     </div>
   </section>
+
+  <dialog class="room-dialog" id="room-dialog" aria-labelledby="room-dialog-title"{% if room_modal_open %} data-open-on-load{% endif %}>
+    <header class="room-dialog__header">
+      <div>
+        <p class="page-kicker">Quản lý phòng</p>
+        <h2 id="room-dialog-title">Thêm phòng mới</h2>
+        <p class="room-dialog__subtitle">Trạng thái ban đầu: Phòng trống</p>
+      </div>
+      <button class="room-dialog__close" id="close-room-dialog" type="button" aria-label="Đóng" title="Đóng">
+        <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+      </button>
+    </header>
+    {% if service_error %}<div class="form-alert form-alert--error room-dialog__alert" role="alert">{{ service_error }}</div>{% endif %}
+    {% include "room_form_fields.html" %}
+  </dialog>
+
+  <script>
+    const roomDialog = document.getElementById("room-dialog");
+    document.getElementById("open-room-dialog").addEventListener("click", (event) => {
+      event.preventDefault();
+      roomDialog.showModal();
+    });
+    document.getElementById("close-room-dialog").addEventListener("click", () => {
+      roomDialog.close();
+    });
+    document.getElementById("cancel-room-dialog").addEventListener("click", () => {
+      roomDialog.close();
+    });
+    if (roomDialog.hasAttribute("data-open-on-load")) {
+      roomDialog.showModal();
+    }
+  </script>
 
 {% endblock %}
