@@ -9,9 +9,9 @@
       <h1 id="room-types-title">Quản lý Thể loại phòng</h1>
       <p class="page-description">Danh sách loại phòng, đơn giá, số lượng và sức chứa.</p>
     </div>
-    <button class="action-button action-button--primary room-type-add" type="button" disabled>
+    <a class="action-button action-button--primary room-type-add" href="{{ url_for('create_room_type') }}">
       <span aria-hidden="true">+</span> Thêm thể loại phòng
-    </button>
+    </a>
   </section>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
@@ -74,6 +74,58 @@
     </section>
   {% endif %}
 
+  {% if create_room_type %}
+    <section class="dashboard-panel room-type-edit-panel" aria-labelledby="room-type-create-title">
+      <header class="panel-header">
+        <div>
+          <h2 id="room-type-create-title">Thêm thể loại phòng</h2>
+          <p>Nhập thông tin cho thể loại phòng mới.</p>
+        </div>
+      </header>
+      <form class="room-form room-type-edit-form" method="post" action="{{ url_for('create_room_type') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="room-form__grid">
+          <div class="form-field">
+            <label for="room-type-name">Tên loại phòng</label>
+            <input id="room-type-name" name="name" type="text" maxlength="120" value="{{ form_values.name }}" required>
+            {% if errors.name %}<span class="field-error">{{ errors.name }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="room-type-price">Giá phòng / đêm (VNĐ)</label>
+            <input id="room-type-price" name="price" type="number" min="1" step="1" value="{{ form_values.price }}" required>
+            {% if errors.price %}<span class="field-error">{{ errors.price }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="room-type-quantity">Số lượng phòng</label>
+            <input id="room-type-quantity" name="quantity" type="number" min="0" step="1" value="{{ form_values.quantity }}" required>
+            {% if errors.quantity %}<span class="field-error">{{ errors.quantity }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="room-type-capacity">Sức chứa</label>
+            <input id="room-type-capacity" name="capacity" type="text" maxlength="40" value="{{ form_values.capacity }}" required>
+            {% if errors.capacity %}<span class="field-error">{{ errors.capacity }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="room-type-status">Trạng thái loại phòng</label>
+            <select id="room-type-status" name="status" required>
+              <option value="active"{% if form_values.status == 'active' %} selected{% endif %}>Đang kinh doanh</option>
+              <option value="inactive"{% if form_values.status == 'inactive' %} selected{% endif %}>Ngừng kinh doanh</option>
+            </select>
+            {% if errors.status %}<span class="field-error">{{ errors.status }}</span>{% endif %}
+          </div>
+          <div class="form-field form-field--wide">
+            <label for="room-type-description">Mô tả loại phòng</label>
+            <textarea id="room-type-description" name="description" rows="3">{{ form_values.description }}</textarea>
+          </div>
+        </div>
+        <footer class="room-form__footer">
+          <a class="action-button" href="{{ url_for('room_types') }}">Hủy</a>
+          <button class="action-button action-button--primary" type="submit">Thêm thể loại phòng</button>
+        </footer>
+      </form>
+    </section>
+  {% endif %}
+
   <section class="dashboard-panel room-types-page" aria-labelledby="room-types-table-title">
     <header class="panel-header">
       <div>
@@ -109,7 +161,10 @@
               <td>
                 <div class="table-actions">
                   <a class="action-button action-button--edit" href="{{ url_for('edit_room_type', room_type_id=room_type.id) }}">Cập nhật</a>
-                  <button class="action-button action-button--delete" type="button" disabled>Xóa</button>
+                  <form method="post" action="{{ url_for('delete_room_type', room_type_id=room_type.id) }}" onsubmit="return window.confirm(this.dataset.confirm)" data-confirm="Bạn có chắc chắn muốn xóa thể loại phòng: {{ room_type.name }}?">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="action-button action-button--delete" type="submit">Xóa</button>
+                  </form>
                 </div>
               </td>
             </tr>

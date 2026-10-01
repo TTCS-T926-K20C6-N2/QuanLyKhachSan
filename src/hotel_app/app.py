@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.utils import secure_filename
 
 from .extensions import csrf, db
-from .models import RoomType, User, normalize_email
+from .models import RoomType, RoomTypeSeedState, User, normalize_email
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -199,13 +199,24 @@ def _seed_demo_user(app: Flask) -> None:
 
 
 def _seed_room_types() -> None:
+    seed_state = db.session.get(RoomTypeSeedState, 1)
+    if seed_state is not None and seed_state.initialized:
+        return
+
     existing_room_type = db.session.execute(
         db.select(RoomType.id).limit(1)
     ).first()
     if existing_room_type is not None:
+        seed_state = seed_state or RoomTypeSeedState(id=1)
+        seed_state.initialized = True
+        db.session.add(seed_state)
+        db.session.commit()
         return
 
+    seed_state = seed_state or RoomTypeSeedState(id=1)
+    seed_state.initialized = True
     db.session.add_all(RoomType(**room_type) for room_type in ROOM_TYPE_CATALOG)
+    db.session.add(seed_state)
     db.session.commit()
 
 
@@ -728,6 +739,137 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             "room_types.html", user=user, room_types=stored_room_types
         )
 
+    @app.route("/room-types/new", methods=["GET", "POST"])
+    def create_room_type():
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        errors: dict[str, str] = {}
+        form_values = {
+            "name": request.form.get("name", ""),
+            "price": request.form.get("price", ""),
+            "quantity": request.form.get("quantity", "0"),
+            "capacity": request.form.get("capacity", ""),
+            "description": request.form.get("description", ""),
+            "status": request.form.get("status", "active"),
+        }
+        service_error = None
+        service_status = 200
+
+        if request.method == "POST":
+            name = form_values["name"].strip()
+            price_input = form_values["price"].strip()
+            quantity_input = form_values["quantity"].strip()
+            capacity = form_values["capacity"].strip()
+
+            if not name:
+                errors["name"] = "Vui lòng nhập tên loại phòng."
+            elif len(name) > 120:
+                errors["name"] = "Tên loại phòng không được vượt quá 120 ký tự."
+            elif any(
+                candidate.name.casefold() == name.casefold()
+                for candidate in db.session.execute(db.select(RoomType)).scalars()
+            ):
+                errors["name"] = "Tên loại phòng đã tồn tại."
+
+            try:
+                price = int(price_input)
+                if price <= 0 or price > 2147483647:
+                    raise ValueError
+            except ValueError:
+                errors["price"] = "Giá phòng phải là số nguyên lớn hơn 0."
+
+            try:
+                quantity = int(quantity_input)
+                if quantity < 0 or quantity > 2147483647:
+                    raise ValueError
+            except ValueError:
+                errors["quantity"] = "Số lượng phòng phải là số nguyên không âm."
+
+            if not capacity:
+                errors["capacity"] = "Vui lòng nhập sức chứa."
+            elif len(capacity) > 40:
+                errors["capacity"] = "Sức chứa không được vượt quá 40 ký tự."
+
+            if form_values["status"] not in ROOM_TYPE_STATUSES:
+                errors["status"] = "Vui lòng chọn trạng thái hợp lệ."
+
+            if not errors:
+                room_type = RoomType(
+                    name=name,
+                    price=price,
+                    quantity=quantity,
+                    capacity=capacity,
+                    description=form_values["description"].strip(),
+                    status=form_values["status"],
+                )
+                db.session.add(room_type)
+                try:
+                    db.session.commit()
+                except IntegrityError:
+                    db.session.rollback()
+                    errors["name"] = "Tên loại phòng đã tồn tại."
+                except SQLAlchemyError:
+                    db.session.rollback()
+                    app.logger.error("A room type creation failed.")
+                    service_error = (
+                        "Hệ thống tạm thời không thể lưu thể loại phòng. Vui lòng thử lại."
+                    )
+                    service_status = 503
+                else:
+                    flash("Thêm thể loại phòng thành công.", "success")
+                    return redirect(url_for("room_types"))
+
+        stored_room_types = db.session.execute(
+            db.select(RoomType).order_by(RoomType.id)
+        ).scalars().all()
+        return (
+            render_template(
+                "room_types.html",
+                user=user,
+                room_types=stored_room_types,
+                create_room_type=True,
+                form_values=form_values,
+                errors=errors,
+                service_error=service_error,
+            ),
+            service_status,
+        )
+
+    @app.route("/room-types/<int:room_type_id>/delete", methods=["POST"])
+    def delete_room_type(room_type_id: int):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        room_type = db.session.get(RoomType, room_type_id)
+        if room_type is None:
+            flash("Không tìm thấy loại phòng cần xóa.", "error")
+            return redirect(url_for("room_types"))
+
+        room_type_name = room_type.name
+        try:
+            db.session.delete(room_type)
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            flash(
+                f'Không thể xóa thể loại phòng "{room_type_name}" vì đang được sử dụng.',
+                "error",
+            )
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.error("A room type deletion failed.")
+            flash(
+                f'Hệ thống tạm thời không thể xóa thể loại phòng "{room_type_name}". Vui lòng thử lại.',
+                "error",
+            )
+        else:
+            flash(f'Đã xóa thể loại phòng "{room_type_name}" thành công.', "success")
+
+        return redirect(url_for("room_types"))
+
     @app.route("/room-types/<int:room_type_id>/edit", methods=["GET", "POST"])
     def edit_room_type(room_type_id: int):
         user = current_user()
@@ -824,6 +966,48 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(_error: CSRFError):
+        if request.endpoint == "create_room_type":
+            user = current_user()
+            stored_room_types = db.session.execute(
+                db.select(RoomType).order_by(RoomType.id)
+            ).scalars().all()
+            return (
+                render_template(
+                    "room_types.html",
+                    user=user,
+                    room_types=stored_room_types,
+                    create_room_type=True,
+                    form_values={
+                        "name": request.form.get("name", ""),
+                        "price": request.form.get("price", ""),
+                        "quantity": request.form.get("quantity", "0"),
+                        "capacity": request.form.get("capacity", ""),
+                        "description": request.form.get("description", ""),
+                        "status": request.form.get("status", "active"),
+                    },
+                    errors={},
+                    service_error=(
+                        "Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
+                    ),
+                ),
+                400,
+            )
+        if request.endpoint == "delete_room_type":
+            user = current_user()
+            stored_room_types = db.session.execute(
+                db.select(RoomType).order_by(RoomType.id)
+            ).scalars().all()
+            return (
+                render_template(
+                    "room_types.html",
+                    user=user,
+                    room_types=stored_room_types,
+                    service_error=(
+                        "Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
+                    ),
+                ),
+                400,
+            )
         session.pop("user_id", None)
         if request.endpoint == "create_room":
             if request.form.get("modal_form") == "1":
