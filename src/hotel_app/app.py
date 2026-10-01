@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import secrets
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -157,6 +157,16 @@ def _environment_flag(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().casefold() in TRUE_VALUES
+
+
+def _valid_room_time(value: str) -> bool:
+    if not value:
+        return True
+    try:
+        parsed_time = datetime.strptime(value, "%H:%M")
+    except ValueError:
+        return False
+    return parsed_time.strftime("%H:%M") == value
 
 
 def _seed_demo_user(app: Flask) -> None:
@@ -391,6 +401,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         room_number = request.form.get("room_number", "").strip()
         description = request.form.get("description", "").strip()
         price_input = request.form.get("price", "").strip()
+        check_in = request.form.get("check_in", "").strip()
+        check_out = request.form.get("check_out", "").strip()
         selected_types = request.form.getlist("room_type")
 
         if request.method == "POST":
@@ -426,6 +438,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             except ValueError:
                 errors["price"] = "Giá thuê phải là số nguyên lớn hơn 0."
 
+            if not _valid_room_time(check_in):
+                errors["check_in"] = "Giờ vào không hợp lệ. Vui lòng chọn giờ theo định dạng HH:MM."
+            if not _valid_room_time(check_out):
+                errors["check_out"] = "Giờ ra không hợp lệ. Vui lòng chọn giờ theo định dạng HH:MM."
+
             image = request.files.get("image")
             image_extension = ""
             image_data = b""
@@ -460,8 +477,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     "image": image_name,
                     "status": "Phòng trống",
                     "state": "empty",
-                    "check_in": None,
-                    "check_out": None,
+                    "check_in": check_in or None,
+                    "check_out": check_out or None,
                 }
                 new_floor = next(
                     (floor for floor in floors if floor["name"] == "Phòng mới"),
@@ -482,6 +499,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 room_number=room_number,
                 description=description,
                 price=price_input,
+                check_in=check_in,
+                check_out=check_out,
                 selected_types=selected_types,
                 room_modal_open=True,
             )
@@ -493,8 +512,146 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             room_number=room_number,
             description=description,
             price=price_input,
+            check_in=check_in,
+            check_out=check_out,
             selected_types=selected_types,
             room_types=ROOM_TYPES,
+        )
+
+    @app.route("/rooms/<room_number>/edit", methods=["GET", "POST"])
+    def edit_room(room_number: str):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        normalized_number = str(room_number).strip()
+        floors = _session_room_floors()
+        room = next(
+            (
+                candidate
+                for floor in floors
+                for candidate in floor.get("rooms", [])
+                if str(candidate.get("number")) == normalized_number
+            ),
+            None,
+        )
+        if room is None:
+            flash(f"Không tìm thấy phòng {normalized_number}.", "error")
+            return redirect(url_for("room_management"))
+
+        errors: dict[str, str] = {}
+        room_number_input = request.form.get("room_number", room.get("number", "")).strip()
+        description = request.form.get("description", room.get("description", "")).strip()
+        price_input = request.form.get("price", str(room.get("price", ""))).strip()
+        check_in = request.form.get("check_in", room.get("check_in") or "").strip()
+        check_out = request.form.get("check_out", room.get("check_out") or "").strip()
+        selected_types = request.form.getlist("room_type")
+        if request.method == "GET":
+            selected_types = [
+                code for code, label in ROOM_TYPES.items() if label == room.get("type")
+            ]
+            if not selected_types:
+                room_type_label = str(room.get("type", "")).casefold()
+                selected_types = [
+                    "vip" if "vip" in room_type_label else (
+                        "single" if "tiêu chuẩn" in room_type_label else "double"
+                    )
+                ]
+
+        if request.method == "POST":
+            existing_numbers = {
+                str(candidate.get("number", "")).casefold()
+                for floor in floors
+                for candidate in floor.get("rooms", [])
+                if candidate is not room
+            }
+            if not room_number_input:
+                errors["room_number"] = "Vui lòng nhập mã phòng."
+            elif len(room_number_input) > 20 or not all(
+                character.isascii()
+                and (character.isalnum() or character in "-_")
+                for character in room_number_input
+            ):
+                errors["room_number"] = "Mã phòng tối đa 20 ký tự, chỉ gồm chữ, số, - hoặc _."
+            elif room_number_input.casefold() in existing_numbers:
+                errors["room_number"] = "Mã phòng đã tồn tại."
+
+            if not description:
+                errors["description"] = "Vui lòng nhập mô tả ngắn."
+            elif len(description) > 200:
+                errors["description"] = "Mô tả không được vượt quá 200 ký tự."
+
+            if len(selected_types) != 1 or selected_types[0] not in ROOM_TYPES:
+                errors["room_type"] = "Vui lòng chọn đúng một thể loại phòng."
+
+            try:
+                price = int(price_input)
+                if price <= 0:
+                    raise ValueError
+            except ValueError:
+                errors["price"] = "Giá thuê phải là số nguyên lớn hơn 0."
+
+            if not _valid_room_time(check_in):
+                errors["check_in"] = "Giờ vào không hợp lệ. Vui lòng chọn giờ theo định dạng HH:MM."
+            if not _valid_room_time(check_out):
+                errors["check_out"] = "Giờ ra không hợp lệ. Vui lòng chọn giờ theo định dạng HH:MM."
+
+            image = request.files.get("image")
+            image_data = b""
+            image_extension = ""
+            has_new_image = image is not None and bool(image.filename)
+            if has_new_image:
+                safe_name = secure_filename(image.filename)
+                image_extension = safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else ""
+                image_data = image.read(5 * 1024 * 1024 + 1)
+                signatures = ROOM_IMAGE_SIGNATURES.get(image_extension, ())
+                valid_signature = any(
+                    image_data.startswith(signature) for signature in signatures
+                )
+                if image_extension not in ALLOWED_ROOM_IMAGE_EXTENSIONS or not valid_signature:
+                    errors["image"] = "Ảnh phải có định dạng JPG, PNG hoặc WEBP hợp lệ."
+                elif len(image_data) > 5 * 1024 * 1024:
+                    errors["image"] = "Ảnh không được vượt quá 5 MB."
+                elif image_extension == "webp" and image_data[8:12] != b"WEBP":
+                    errors["image"] = "Ảnh WEBP không hợp lệ."
+
+            if not errors:
+                old_image = room.get("image")
+                room.update(
+                    number=room_number_input,
+                    type=ROOM_TYPES[selected_types[0]],
+                    description=description,
+                    price=price,
+                    check_in=check_in or None,
+                    check_out=check_out or None,
+                )
+                if has_new_image:
+                    upload_folder = Path(app.config["ROOM_UPLOAD_FOLDER"])
+                    upload_folder.mkdir(parents=True, exist_ok=True)
+                    image_name = f"{secrets.token_hex(16)}.{image_extension}"
+                    (upload_folder / image_name).write_bytes(image_data)
+                    room["image"] = image_name
+                    if old_image and Path(old_image).name == old_image:
+                        (upload_folder / old_image).unlink(missing_ok=True)
+                session["room_floors"] = floors
+                flash(f"Đã cập nhật phòng {room_number_input}.", "success")
+                return redirect(url_for("room_management"))
+
+        return render_template(
+            "room_form.html",
+            user=user,
+            errors=errors,
+            room_number=room_number_input,
+            description=description,
+            price=price_input,
+            check_in=check_in,
+            check_out=check_out,
+            selected_types=selected_types,
+            room_types=ROOM_TYPES,
+            update_mode=True,
+            edit_room_number=normalized_number,
+            current_image=room.get("image"),
+            service_error=None,
         )
 
     @app.route("/room-images/<path:filename>")
