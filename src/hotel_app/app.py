@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.utils import secure_filename
 
 from .extensions import csrf, db
-from .models import User, normalize_email
+from .models import RoomType, User, normalize_email
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -117,17 +117,22 @@ ROOM_FLOORS = (
 ROOM_TYPE_CATALOG = (
     {
         "name": "Phòng tiêu chuẩn",
-        "price": "500,000 VNĐ",
+        "price": 500000,
+        "quantity": 0,
         "capacity": "2 người",
         "description": "Phòng cơ bản đầy đủ tiện nghi",
+        "status": "active",
     },
     {
         "name": "Phòng VIP",
-        "price": "1,200,000 VNĐ",
+        "price": 1200000,
+        "quantity": 0,
         "capacity": "4 người",
         "description": "Phòng rộng, view biển, có bồn tắm",
+        "status": "active",
     },
 )
+ROOM_TYPE_STATUSES = {"active", "inactive"}
 
 
 def _environment(test_config: dict[str, Any] | None) -> str:
@@ -190,6 +195,17 @@ def _seed_demo_user(app: Flask) -> None:
     demo_user = User(email=demo_email)
     demo_user.set_password(demo_password)
     db.session.add(demo_user)
+    db.session.commit()
+
+
+def _seed_room_types() -> None:
+    existing_room_type = db.session.execute(
+        db.select(RoomType.id).limit(1)
+    ).first()
+    if existing_room_type is not None:
+        return
+
+    db.session.add_all(RoomType(**room_type) for room_type in ROOM_TYPE_CATALOG)
     db.session.commit()
 
 
@@ -705,7 +721,106 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if user is None:
             return redirect(url_for("login"))
 
-        return render_template("room_types.html", user=user, room_types=ROOM_TYPE_CATALOG)
+        stored_room_types = db.session.execute(
+            db.select(RoomType).order_by(RoomType.id)
+        ).scalars().all()
+        return render_template(
+            "room_types.html", user=user, room_types=stored_room_types
+        )
+
+    @app.route("/room-types/<int:room_type_id>/edit", methods=["GET", "POST"])
+    def edit_room_type(room_type_id: int):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        room_type = db.session.get(RoomType, room_type_id)
+        if room_type is None:
+            flash("Không tìm thấy loại phòng cần cập nhật.", "error")
+            return redirect(url_for("room_types"))
+
+        errors: dict[str, str] = {}
+        form_values = {
+            "name": request.form.get("name", room_type.name),
+            "price": request.form.get("price", str(room_type.price)),
+            "quantity": request.form.get("quantity", str(room_type.quantity)),
+            "description": request.form.get("description", room_type.description),
+            "status": request.form.get("status", room_type.status),
+        }
+        service_error = None
+        service_status = 200
+
+        if request.method == "POST":
+            name = form_values["name"].strip()
+            price_input = form_values["price"].strip()
+            quantity_input = form_values["quantity"].strip()
+
+            if not name:
+                errors["name"] = "Vui lòng nhập tên loại phòng."
+            elif len(name) > 120:
+                errors["name"] = "Tên loại phòng không được vượt quá 120 ký tự."
+            elif any(
+                candidate.name.casefold() == name.casefold()
+                for candidate in db.session.execute(
+                    db.select(RoomType).where(RoomType.id != room_type.id)
+                ).scalars()
+            ):
+                errors["name"] = "Tên loại phòng đã tồn tại."
+
+            try:
+                price = int(price_input)
+                if price <= 0 or price > 2147483647:
+                    raise ValueError
+            except ValueError:
+                errors["price"] = "Giá phòng phải là số nguyên lớn hơn 0."
+
+            try:
+                quantity = int(quantity_input)
+                if quantity < 0 or quantity > 2147483647:
+                    raise ValueError
+            except ValueError:
+                errors["quantity"] = "Số lượng phòng phải là số nguyên không âm."
+
+            if form_values["status"] not in ROOM_TYPE_STATUSES:
+                errors["status"] = "Vui lòng chọn trạng thái hợp lệ."
+
+            if not errors:
+                room_type.name = name
+                room_type.price = price
+                room_type.quantity = quantity
+                room_type.description = form_values["description"].strip()
+                room_type.status = form_values["status"]
+                try:
+                    db.session.commit()
+                except IntegrityError:
+                    db.session.rollback()
+                    errors["name"] = "Tên loại phòng đã tồn tại."
+                except SQLAlchemyError:
+                    db.session.rollback()
+                    app.logger.error("A room type update failed.")
+                    service_error = (
+                        "Hệ thống tạm thời không thể lưu thay đổi. Vui lòng thử lại."
+                    )
+                    service_status = 503
+                else:
+                    flash("Cập nhật loại phòng thành công.", "success")
+                    return redirect(url_for("room_types"))
+
+        stored_room_types = db.session.execute(
+            db.select(RoomType).order_by(RoomType.id)
+        ).scalars().all()
+        return (
+            render_template(
+                "room_types.html",
+                user=user,
+                room_types=stored_room_types,
+                edit_room_type=room_type,
+                form_values=form_values,
+                errors=errors,
+                service_error=service_error,
+            ),
+            service_status,
+        )
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(_error: CSRFError):
@@ -780,6 +895,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     with app.app_context():
         db.create_all()
         _seed_demo_user(app)
+        _seed_room_types()
 
     return app
 
