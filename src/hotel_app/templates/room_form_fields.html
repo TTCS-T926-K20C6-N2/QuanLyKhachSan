@@ -1,4 +1,4 @@
-<form class="room-form" method="post" action="{{ url_for('create_room') }}" enctype="multipart/form-data" novalidate>
+<form class="room-form" method="post" action="{{ url_for('edit_room', room_number=edit_room_number) if update_mode else url_for('create_room') }}" enctype="multipart/form-data" novalidate>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="modal_form" value="{{ '1' if modal_form else '0' }}">
 
@@ -15,12 +15,24 @@
       {% if errors.get('price') %}<small class="field-error" id="room-price-error">{{ errors.price }}</small>{% endif %}
     </div>
 
+    <div class="form-field">
+      <label for="room-check-in">Giờ vào</label>
+      <input id="room-check-in" name="check_in" type="time" value="{{ check_in }}" aria-describedby="room-check-in-error">
+      {% if errors.get('check_in') %}<small class="field-error" id="room-check-in-error">{{ errors.check_in }}</small>{% endif %}
+    </div>
+
+    <div class="form-field">
+      <label for="room-check-out">Giờ ra</label>
+      <input id="room-check-out" name="check_out" type="time" value="{{ check_out }}" aria-describedby="room-check-out-error">
+      {% if errors.get('check_out') %}<small class="field-error" id="room-check-out-error">{{ errors.check_out }}</small>{% endif %}
+    </div>
+
     <fieldset class="form-field room-type-options">
       <legend>Thể loại phòng</legend>
       <div class="checkbox-options">
         {% for code, label in room_types.items() %}
           <label class="checkbox-option">
-            <input type="checkbox" name="room_type" value="{{ code }}"{% if loop.first %} required{% endif %}{% if code in selected_types %} checked{% endif %}>
+            <input type="radio" name="room_type" value="{{ code }}"{% if loop.first %} required{% endif %}{% if code in selected_types %} checked{% endif %}>
             <span>{{ label }}</span>
           </label>
         {% endfor %}
@@ -36,8 +48,9 @@
 
     <div class="form-field form-field--wide">
       <label for="room-image">Hình ảnh phòng</label>
-      <input id="room-image" name="image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required aria-describedby="room-image-help room-image-error">
-      <small id="room-image-help" class="field-hint">JPG, PNG hoặc WEBP, tối đa 5 MB.</small>
+      <input id="room-image" name="image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"{% if not update_mode %} required{% endif %} aria-describedby="room-image-help room-image-error">
+      <small id="room-image-help" class="field-hint">{% if update_mode %}Chọn ảnh mới nếu muốn thay ảnh hiện tại. {% endif %}JPG, PNG hoặc WEBP, tối đa 5 MB.</small>
+      {% if update_mode and current_image %}<small class="field-hint">Ảnh hiện tại: {{ current_image }}</small>{% endif %}
       {% if errors.get('image') %}<small class="field-error" id="room-image-error">{{ errors.image }}</small>{% endif %}
     </div>
   </div>
@@ -48,6 +61,6 @@
     {% else %}
       <a class="action-button" href="{{ url_for('room_management') }}">Hủy</a>
     {% endif %}
-    <button class="action-button action-button--primary" type="submit">Thêm phòng</button>
+    <button class="action-button action-button--primary" type="submit">{{ 'Lưu cập nhật' if update_mode else 'Thêm phòng' }}</button>
   </div>
 </form>

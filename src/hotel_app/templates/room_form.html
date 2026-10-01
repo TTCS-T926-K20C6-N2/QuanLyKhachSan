@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Thêm phòng | Hotel Management{% endblock %}
+{% block title %}{{ 'Cập nhật phòng' if update_mode else 'Thêm phòng' }} | Hotel Management{% endblock %}
 
 {% block content %}
   <section class="page-heading" aria-labelledby="room-form-title">
     <div>
       <p class="page-kicker">Quản lý phòng</p>
-      <h1 id="room-form-title">Thêm phòng mới</h1>
-      <p class="page-description">Nhập thông tin phòng và tải ảnh lên hệ thống.</p>
+      <h1 id="room-form-title">{{ 'Cập nhật phòng' if update_mode else 'Thêm phòng mới' }}</h1>
+      <p class="page-description">{{ 'Chỉnh sửa thông tin phòng và cập nhật ảnh nếu cần.' if update_mode else 'Nhập thông tin phòng và tải ảnh lên hệ thống.' }}</p>
     </div>
   </section>
 
@@ -22,7 +22,7 @@
     <header class="panel-header">
       <div>
         <h2 id="room-form-section-title">Thông tin phòng</h2>
-        <p>Trạng thái ban đầu: Phòng trống</p>
+        <p>{{ 'Cập nhật thông tin phòng hiện tại.' if update_mode else 'Trạng thái ban đầu: Phòng trống' }}</p>
       </div>
     </header>
 
