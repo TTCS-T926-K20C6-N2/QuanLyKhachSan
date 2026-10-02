@@ -111,7 +111,7 @@ def test_login_success_flash_is_one_time_and_reappears_after_a_new_login(client)
     room_page = client.get("/rooms").get_data(as_text=True)
     assert "Đăng nhập thành công" not in room_page
     logout_token = re.search(
-        r'<form class="sidebar-logout".*?'
+        r'<form class="account-menu__form".*?'
         r'name="csrf_token"[^>]*value="([^"]+)"',
         room_page,
         re.DOTALL,
@@ -208,19 +208,21 @@ def test_account_info_menu_item_is_removed(client):
     assert "Thông tin tài khoản" not in page
 
 
-def test_sidebar_logout_clears_session_and_redirects_to_login(client):
+def test_account_menu_logout_clears_session_and_redirects_to_login(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
     page = client.get("/rooms").get_data(as_text=True)
 
     assert re.search(
-        r'<aside class="sidebar">.*?'
-        r'<form class="sidebar-logout" method="post" action="/logout">.*?'
-        r'<button class="sidebar-logout__button" type="submit">.*?Đăng xuất',
+        r'<header class="topbar">.*?'
+        r'<button class="topbar-icon account-menu__toggle" id="account-menu-toggle" type="button" aria-label="Menu tài khoản" aria-expanded="false" aria-controls="account-menu">.*?'
+        r'<div class="account-menu" id="account-menu" aria-labelledby="account-menu-toggle" hidden>.*?'
+        r'<form class="account-menu__form" method="post" action="/logout">.*?'
+        r'<button class="account-menu__logout" type="submit">.*?Đăng xuất',
         page,
         re.DOTALL,
     )
     csrf_token = re.search(
-        r'<form class="sidebar-logout".*?'
+        r'<form class="account-menu__form".*?'
         r'name="csrf_token"[^>]*value="([^"]+)"',
         page,
         re.DOTALL,
@@ -237,7 +239,7 @@ def test_sidebar_logout_clears_session_and_redirects_to_login(client):
     assert "Đăng xuất thành công." in login_page
 
 
-def test_sidebar_logout_replaces_account_menu_items(client):
+def test_topbar_account_menu_has_one_logout_action(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
 
     page = client.get("/rooms").get_data(as_text=True)
@@ -245,6 +247,9 @@ def test_sidebar_logout_replaces_account_menu_items(client):
     assert "Thông tin tài khoản" not in page
     assert page.count("Đăng xuất") == 1
     assert 'method="post" action="/logout"' in page
+    assert 'aria-expanded="false" aria-controls="account-menu"' in page
+    assert '<form class="sidebar-logout"' not in page
+    assert 'id="icon-menu"' in page
 
 
 def test_database_contains_scrypt_hash_not_plaintext(app):

@@ -15,18 +15,16 @@
       {% if errors.get('price') %}<small class="field-error" id="room-price-error">{{ errors.price }}</small>{% endif %}
     </div>
 
-    <fieldset class="form-field room-type-options">
-      <legend>Thể loại phòng</legend>
-      <div class="checkbox-options">
+    <div class="form-field room-type-options">
+      <label for="room-type">Thể loại phòng</label>
+      <select id="room-type" name="room_type" required aria-describedby="room-type-error">
+        <option value="">Chọn thể loại phòng</option>
         {% for code, label in room_types.items() %}
-          <label class="checkbox-option">
-            <input type="checkbox" name="room_type" value="{{ code }}"{% if code in selected_types %} checked{% endif %}>
-            <span>{{ label }}</span>
-          </label>
+          <option value="{{ code }}"{% if code in selected_types %} selected{% endif %}>{{ label }}</option>
         {% endfor %}
-      </div>
-      {% if errors.get('room_type') %}<small class="field-error">{{ errors.room_type }}</small>{% endif %}
-    </fieldset>
+      </select>
+      {% if errors.get('room_type') %}<small class="field-error" id="room-type-error">{{ errors.room_type }}</small>{% endif %}
+    </div>
 
     {% if update_mode %}
       <div class="form-field">
@@ -62,19 +60,4 @@
     {% endif %}
     <button class="action-button action-button--primary" type="submit">{{ 'Lưu cập nhật' if update_mode else 'Thêm phòng' }}</button>
   </div>
-  <script>
-    const roomForm = document.currentScript.closest("form");
-    const roomTypeOptions = roomForm.querySelector(".room-type-options");
-    roomTypeOptions.addEventListener("change", (event) => {
-      const selectedCheckbox = event.target;
-      if (!(selectedCheckbox instanceof HTMLInputElement) || !selectedCheckbox.checked) {
-        return;
-      }
-      roomTypeOptions.querySelectorAll('input[type="checkbox"][name="room_type"]').forEach((checkbox) => {
-        if (checkbox !== selectedCheckbox) {
-          checkbox.checked = false;
-        }
-      });
-    });
-  </script>
 </form>

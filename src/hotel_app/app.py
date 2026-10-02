@@ -419,11 +419,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         return {str(room_type.id): room_type.name for room_type in room_types}
 
     def rooms_using_room_type(name: str) -> list[Room]:
-        canonical_name = name.casefold()
+        canonical_name = name.strip().casefold()
         return [
             room
             for room in db.session.execute(db.select(Room)).scalars()
-            if room.type.casefold() == canonical_name
+            if (room.type or "").strip().casefold() == canonical_name
         ]
 
     @app.route("/login", methods=["GET", "POST"])
@@ -962,34 +962,32 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         stored_room_types = db.session.execute(
             db.select(RoomType).order_by(RoomType.id)
         ).scalars().all()
-        stored_room_types_names = db.session.execute(
-            db.select(Room.type)
-        ).scalars().all()
         room_counts: dict[str, int] = {}
-        for room_type_name in stored_room_types_names:
-            normalized_name = (room_type_name or "").strip().casefold()
+        occupied_counts: dict[str, int] = {}
+        stored_rooms = db.session.execute(db.select(Room)).scalars().all()
+        for room in stored_rooms:
+            normalized_name = (room.type or "").strip().casefold()
             room_counts[normalized_name] = room_counts.get(normalized_name, 0) + 1
-
-        search_query = request.args.get("q", "").strip()
-        normalized_query = search_query.casefold()
-        visible_room_types = [
-            room_type
-            for room_type in stored_room_types
-            if normalized_query in room_type.name.strip().casefold()
-        ]
+            if room.status == "Đang thuê" or room.state == "occupied":
+                occupied_counts[normalized_name] = (
+                    occupied_counts.get(normalized_name, 0) + 1
+                )
         return {
-            "room_types": visible_room_types,
-            "room_type_count": len(stored_room_types),
-            "room_count": len(stored_room_types_names),
-            "used_room_type_count": sum(
-                room_counts.get(room_type.name.strip().casefold(), 0) > 0
-                for room_type in stored_room_types
-            ),
+            "room_types": stored_room_types,
             "room_type_counts": {
                 room_type.id: room_counts.get(room_type.name.strip().casefold(), 0)
                 for room_type in stored_room_types
             },
-            "search_query": search_query,
+            "room_type_occupied_counts": {
+                room_type.id: occupied_counts.get(
+                    room_type.name.strip().casefold(), 0
+                )
+                for room_type in stored_room_types
+            },
+            "room_type_targets": [
+                {"id": room_type.id, "name": room_type.name}
+                for room_type in stored_room_types
+            ],
         }
 
     @app.route("/room-types")
@@ -1023,7 +1021,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             elif len(name) > 120:
                 errors["name"] = "Tên thể loại phòng không được vượt quá 120 ký tự."
             elif any(
-                candidate.name.casefold() == name.casefold()
+                candidate.name.strip().casefold() == name.casefold()
                 for candidate in db.session.execute(db.select(RoomType)).scalars()
             ):
                 errors["name"] = "Tên thể loại phòng đã tồn tại."
@@ -1113,53 +1111,104 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if user is None:
             return redirect(url_for("login"))
 
+        if request.method == "GET":
+            return redirect(url_for("room_types"))
+
         room_type = db.session.get(RoomType, room_type_id)
         if room_type is None:
             flash("Không tìm thấy loại phòng cần cập nhật.", "error")
             return redirect(url_for("room_types"))
 
         errors: dict[str, str] = {}
+        name_input = request.form.get("name", room_type.name)
+        target_value = request.form.get("target_room_type_id", "").strip()
         form_values = {
-            "name": request.form.get("name", room_type.name),
+            "name": name_input,
+            "target_room_type_id": target_value,
         }
+        transfer_error = None
         service_error = None
         service_status = 200
 
         if request.method == "POST":
-            name = form_values["name"].strip()
+            name = name_input.strip()
+            name_changed = name != room_type.name
+            target = None
 
-            if not name:
-                errors["name"] = "Vui lòng nhập tên thể loại phòng."
-            elif len(name) > 120:
-                errors["name"] = "Tên thể loại phòng không được vượt quá 120 ký tự."
-            elif any(
-                candidate.name.casefold() == name.casefold()
-                for candidate in db.session.execute(
-                    db.select(RoomType).where(RoomType.id != room_type.id)
-                ).scalars()
-            ):
-                errors["name"] = "Tên thể loại phòng đã tồn tại."
+            if name_changed:
+                if not name:
+                    errors["name"] = "Vui lòng nhập tên thể loại phòng."
+                elif len(name) > 120:
+                    errors["name"] = "Tên thể loại phòng không được vượt quá 120 ký tự."
+                elif any(
+                    candidate.name.strip().casefold() == name.casefold()
+                    for candidate in db.session.execute(
+                        db.select(RoomType).where(RoomType.id != room_type.id)
+                    ).scalars()
+                ):
+                    errors["name"] = "Tên thể loại phòng đã tồn tại."
 
-            if not errors:
-                previous_name = room_type.name
+            if target_value:
                 try:
-                    rooms_to_update = rooms_using_room_type(previous_name)
-                    room_type.name = name
-                    for room in rooms_to_update:
-                        room.type = name
+                    target_id = int(target_value)
+                except ValueError:
+                    target_id = None
+                target = db.session.get(RoomType, target_id) if target_id else None
+                if target is None:
+                    transfer_error = "Vui lòng chọn một thể loại phòng đích hợp lệ."
+                elif target.id == room_type.id:
+                    transfer_error = "Thể loại phòng nguồn và đích phải khác nhau."
+
+            previous_name = room_type.name
+            rooms_to_update = (
+                rooms_using_room_type(previous_name)
+                if name_changed or target is not None
+                else []
+            )
+            if target is not None and not rooms_to_update:
+                transfer_error = "Không có phòng thuộc thể loại này để chuyển."
+
+            if not errors and transfer_error is None:
+                if not name_changed and target is None:
+                    flash("Không có thay đổi nào được thực hiện.", "info")
+                    return redirect(url_for("room_types"))
+
+                room_count = len(rooms_to_update)
+                try:
+                    if target is not None:
+                        for room in rooms_to_update:
+                            room.type = target.name
+                    elif name_changed:
+                        for room in rooms_to_update:
+                            room.type = name
+                    if name_changed:
+                        room_type.name = name
                     db.session.commit()
                 except IntegrityError:
                     db.session.rollback()
                     errors["name"] = "Tên loại phòng đã tồn tại."
                 except SQLAlchemyError:
                     db.session.rollback()
-                    app.logger.error("A room type update failed.")
+                    app.logger.exception("A room type update failed.")
                     service_error = (
                         "Hệ thống tạm thời không thể lưu thay đổi. Vui lòng thử lại."
                     )
                     service_status = 503
                 else:
-                    flash("Cập nhật loại phòng thành công.", "success")
+                    if target is not None and name_changed:
+                        flash(
+                            f'Đã đổi tên thể loại phòng "{previous_name}" thành "{name}" '
+                            f'và chuyển {room_count} phòng sang "{target.name}".',
+                            "success",
+                        )
+                    elif target is not None:
+                        flash(
+                            f'Đã chuyển {room_count} phòng từ "{previous_name}" '
+                            f'sang "{target.name}" thành công.',
+                            "success",
+                        )
+                    else:
+                        flash("Cập nhật tên thể loại phòng thành công.", "success")
                     return redirect(url_for("room_types"))
 
         return (
@@ -1170,6 +1219,80 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 edit_room_type=room_type,
                 form_values=form_values,
                 errors=errors,
+                transfer_error=transfer_error,
+                service_error=service_error,
+            ),
+            service_status,
+        )
+
+    @app.route("/room-types/<int:room_type_id>/transfer", methods=["POST"])
+    def transfer_room_type_rooms(room_type_id: int):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        source = db.session.get(RoomType, room_type_id)
+        if source is None:
+            flash("Không tìm thấy thể loại phòng nguồn.", "error")
+            return redirect(url_for("room_types"))
+
+        target_value = request.form.get("target_room_type_id", "")
+        try:
+            target_id = int(target_value)
+        except (TypeError, ValueError):
+            target_id = None
+        target = db.session.get(RoomType, target_id) if target_id else None
+        rooms_to_transfer = rooms_using_room_type(source.name)
+        occupied_count = sum(
+            room.status == "Đang thuê" or room.state == "occupied"
+            for room in rooms_to_transfer
+        )
+        transfer_error = None
+        if target is None:
+            transfer_error = "Vui lòng chọn một thể loại phòng đích hợp lệ."
+        elif target.id == source.id:
+            transfer_error = "Thể loại phòng nguồn và đích phải khác nhau."
+        elif not rooms_to_transfer:
+            transfer_error = "Không có phòng thuộc thể loại này để chuyển."
+
+        form_values = {
+            "name": source.name,
+            "target_room_type_id": target_value,
+        }
+        service_error = None
+        service_status = 200
+        if transfer_error is None:
+            source_name = source.name
+            target_name = target.name
+            room_count = len(rooms_to_transfer)
+            try:
+                for room in rooms_to_transfer:
+                    room.type = target_name
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+                app.logger.exception("A room type transfer failed.")
+                service_error = (
+                    "Hệ thống tạm thời không thể chuyển phòng. Vui lòng thử lại."
+                )
+                service_status = 503
+            else:
+                flash(
+                    f'Đã chuyển {room_count} phòng từ "{source_name}" '
+                    f'sang "{target_name}" thành công.',
+                    "success",
+                )
+                return redirect(url_for("room_types"))
+
+        return (
+            render_template(
+                "room_types.html",
+                user=user,
+                **room_type_page_context(),
+                edit_room_type=source,
+                form_values=form_values,
+                errors={},
+                transfer_error=transfer_error,
                 service_error=service_error,
             ),
             service_status,
@@ -1207,6 +1330,34 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     "room_types.html",
                     user=user,
                     **room_type_page_context(),
+                    service_error=(
+                        "Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
+                    ),
+                ),
+                400,
+            )
+        if request.endpoint in {"edit_room_type", "transfer_room_type_rooms"}:
+            user = current_user()
+            if user is None:
+                return redirect(url_for("login"))
+            room_type = db.session.get(RoomType, request.view_args["room_type_id"])
+            if room_type is None:
+                flash("Không tìm thấy thể loại phòng cần cập nhật.", "error")
+                return redirect(url_for("room_types"))
+            return (
+                render_template(
+                    "room_types.html",
+                    user=user,
+                    **room_type_page_context(),
+                    edit_room_type=room_type,
+                    form_values={
+                        "name": request.form.get("name", room_type.name),
+                        "target_room_type_id": request.form.get(
+                            "target_room_type_id", ""
+                        ),
+                    },
+                    errors={},
+                    transfer_error=None,
                     service_error=(
                         "Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
                     ),

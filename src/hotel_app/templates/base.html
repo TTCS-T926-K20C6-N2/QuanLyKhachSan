@@ -86,9 +86,6 @@
     <div class="dashboard-shell">
       <header class="topbar">
         <div class="brand-area">
-          <span class="topbar-icon" aria-hidden="true">
-            <svg class="icon"><use href="#icon-menu"></use></svg>
-          </span>
           <span class="brand-mark" aria-hidden="true">HM</span>
           <span class="brand-copy">
             <strong>HOTEL MANAGEMENT</strong>
@@ -98,11 +95,23 @@
 
         <div class="account-area">
           <div class="account-identity" role="group" aria-label="Tài khoản: {{ current_email }}">
-              <span class="account-avatar" aria-hidden="true">{{ current_email[:1]|upper }}</span>
-              <span class="account-copy">
-                <strong>{{ current_email }}</strong>
-                <small><span class="online-dot" aria-hidden="true"></span>Đang đăng nhập</small>
-              </span>
+            <span class="account-avatar" aria-hidden="true">{{ current_email[:1]|upper }}</span>
+            <span class="account-copy">
+              <strong>{{ current_email }}</strong>
+              <small><span class="online-dot" aria-hidden="true"></span>Đang đăng nhập</small>
+            </span>
+          </div>
+          <button class="topbar-icon account-menu__toggle" id="account-menu-toggle" type="button" aria-label="Menu tài khoản" aria-expanded="false" aria-controls="account-menu">
+            <svg class="icon" aria-hidden="true"><use href="#icon-menu"></use></svg>
+          </button>
+          <div class="account-menu" id="account-menu" aria-labelledby="account-menu-toggle" hidden>
+            <form class="account-menu__form" method="post" action="{{ url_for('logout') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="account-menu__logout" type="submit">
+                <svg class="icon" aria-hidden="true"><use href="#icon-logout"></use></svg>
+                <span>Đăng xuất</span>
+              </button>
+            </form>
           </div>
         </div>
       </header>
@@ -124,18 +133,39 @@
             </a>
           </div>
         </nav>
-        <form class="sidebar-logout" method="post" action="{{ url_for('logout') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="sidebar-logout__button" type="submit">
-            <svg class="icon" aria-hidden="true"><use href="#icon-logout"></use></svg>
-            <span>Đăng xuất</span>
-          </button>
-        </form>
       </aside>
 
       <main id="main-content" class="main-content">
         {% block content %}{% endblock %}
       </main>
     </div>
+    <script>
+      const accountMenuToggle = document.getElementById("account-menu-toggle");
+      const accountMenu = document.getElementById("account-menu");
+      const accountLogoutButton = accountMenu.querySelector("button[type=submit]");
+
+      function closeAccountMenu(restoreFocus = false) {
+        accountMenu.hidden = true;
+        accountMenuToggle.setAttribute("aria-expanded", "false");
+        if (restoreFocus) accountMenuToggle.focus();
+      }
+
+      accountMenuToggle.addEventListener("click", () => {
+        const shouldOpen = accountMenu.hidden;
+        accountMenu.hidden = !shouldOpen;
+        accountMenuToggle.setAttribute("aria-expanded", String(shouldOpen));
+        if (shouldOpen) accountLogoutButton.focus();
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!event.target.closest(".account-area")) closeAccountMenu();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !accountMenu.hidden) {
+          closeAccountMenu(true);
+        }
+      });
+    </script>
   </body>
 </html>
