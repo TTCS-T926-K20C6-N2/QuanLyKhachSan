@@ -47,8 +47,9 @@
             {% set room_image_url = url_for('room_image', filename=room.image) if room.image else url_for('static', filename=default_room_images.get(room.type, 'images/room-double.jpg')) %}
             <img class="room-image" src="{{ room_image_url }}" alt="Ảnh phòng {{ room.number }}">
             <p class="room-type">{{ room.type }}</p>
-            <p class="room-description">{{ room.description or "—" }}</p>
-            <p class="room-price">{% if room.price > 0 %}{{ "{:,.0f}".format(room.price) }} VNĐ / đêm{% else %}—{% endif %}</p>
+            {% set display_values = room_display_values[room.id] %}
+            <p class="room-description">{{ display_values.description or "—" }}</p>
+            <p class="room-price">{% if display_values.price > 0 %}{{ "{:,.0f}".format(display_values.price) }} VNĐ / đêm{% else %}—{% endif %}</p>
             <dl class="room-times">
               <div>
                 <dt>Giờ vào</dt>

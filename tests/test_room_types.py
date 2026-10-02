@@ -38,6 +38,18 @@ def _room_type_count(html: str, name: str) -> int:
     return int(match.group(1))
 
 
+def _room_card_html(html: str, room_number: str) -> str:
+    match = re.search(
+        rf'<article\s+class="room-card [^"]+"\s+'
+        rf'aria-label="Phòng {re.escape(room_number)}, [^"]+"\s*>'
+        r"(.*?)</article>",
+        html,
+        re.DOTALL,
+    )
+    assert match is not None
+    return match.group(1)
+
+
 def _login(client):
     return client.post(
         "/login",
@@ -1585,6 +1597,175 @@ def test_edit_room_keeps_saved_price_and_description_on_get(client, app):
         ).scalar_one()
         assert room.price == 9999
         assert room.description == description
+
+
+@pytest.mark.parametrize(
+    ("room_number", "room_type"),
+    [
+        ("101", "Phòng đơn"),
+        ("102", "Phòng đôi"),
+        ("104", "Phòng VIP"),
+    ],
+)
+def test_room_cards_show_catalog_defaults_for_missing_values(
+    client, room_number, room_type
+):
+    assert _login(client).status_code == 302
+    defaults = next(item for item in ROOM_TYPE_CATALOG if item["name"] == room_type)
+
+    card = _room_card_html(
+        client.get("/rooms").get_data(as_text=True),
+        room_number,
+    )
+
+    assert defaults["description"] in card
+    assert f'{defaults["price"]:,} VNĐ / đêm' in card
+
+
+def test_room_card_keeps_saved_price_and_description(client, app):
+    assert _login(client).status_code == 302
+    description = "Mô tả riêng đã lưu cho phòng 304"
+    with app.app_context():
+        room = db.session.execute(
+            db.select(Room).where(Room.number == "304")
+        ).scalar_one()
+        room.price = 9999
+        room.description = description
+        db.session.commit()
+
+    card = _room_card_html(
+        client.get("/rooms").get_data(as_text=True),
+        "304",
+    )
+
+    assert description in card
+    assert "9,999 VNĐ / đêm" in card
+    assert "Phòng cơ bản đầy đủ tiện nghi" not in card
+    assert "500,000 VNĐ / đêm" not in card
+
+
+def test_room_card_only_falls_back_for_missing_price(client, app):
+    assert _login(client).status_code == 302
+    description = "Mô tả riêng vẫn được giữ"
+    with app.app_context():
+        room = db.session.execute(
+            db.select(Room).where(Room.number == "304")
+        ).scalar_one()
+        room.price = 0
+        room.description = description
+        db.session.commit()
+
+    card = _room_card_html(
+        client.get("/rooms").get_data(as_text=True),
+        "304",
+    )
+
+    assert description in card
+    assert "500,000 VNĐ / đêm" in card
+    assert "Phòng cơ bản đầy đủ tiện nghi" not in card
+
+
+def test_room_card_only_falls_back_for_missing_description(client, app):
+    assert _login(client).status_code == 302
+    with app.app_context():
+        room = db.session.execute(
+            db.select(Room).where(Room.number == "304")
+        ).scalar_one()
+        room.price = 987654
+        room.description = ""
+        db.session.commit()
+
+    card = _room_card_html(
+        client.get("/rooms").get_data(as_text=True),
+        "304",
+    )
+
+    assert "Phòng cơ bản đầy đủ tiện nghi" in card
+    assert "987,654 VNĐ / đêm" in card
+    assert "500,000 VNĐ / đêm" not in card
+
+
+def test_room_card_does_not_invent_defaults_for_unknown_room_type(client, app):
+    assert _login(client).status_code == 302
+    _add_test_room_type(app, "Phòng gia đình")
+    room_id = _add_test_room(app, "FAMILY-1", "Phòng gia đình")
+    with app.app_context():
+        room = db.session.get(Room, room_id)
+        room.price = 0
+        room.description = ""
+        db.session.commit()
+
+    card = _room_card_html(
+        client.get("/rooms").get_data(as_text=True),
+        "FAMILY-1",
+    )
+
+    assert '<p class="room-description">—</p>' in card
+    assert '<p class="room-price">—</p>' in card
+
+
+def test_room_list_catalog_defaults_do_not_change_stored_room_data(client, app):
+    assert _login(client).status_code == 302
+
+    def stored_room_values():
+        with app.app_context():
+            return [
+                (
+                    room.id,
+                    room.number,
+                    room.floor,
+                    room.position,
+                    room.type,
+                    room.description,
+                    room.price,
+                    room.image,
+                    room.status,
+                    room.state,
+                    room.check_in,
+                    room.check_out,
+                    room.is_demo,
+                )
+                for room in db.session.execute(
+                    db.select(Room).order_by(Room.id)
+                ).scalars()
+            ]
+
+    before = stored_room_values()
+    response = client.get("/rooms")
+    after = stored_room_values()
+
+    assert response.status_code == 200
+    assert before == after
+    assert any(room[5] == "" and room[6] == 0 for room in after)
+
+
+def test_room_card_reflects_saved_edit_values(client):
+    assert _login(client).status_code == 302
+    edit_page = client.get("/rooms/304/edit").get_data(as_text=True)
+    csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', edit_page)
+    assert csrf_token is not None
+
+    response = client.post(
+        "/rooms/304/edit",
+        data={
+            "csrf_token": csrf_token.group(1),
+            "room_number": "304",
+            "description": "Giá trị vừa lưu cho phòng 304",
+            "price": "1234567",
+            "room_type": "1",
+            "status": "Phòng trống",
+        },
+    )
+
+    assert response.status_code == 302
+    card = _room_card_html(
+        client.get("/rooms").get_data(as_text=True),
+        "304",
+    )
+    assert "Giá trị vừa lưu cho phòng 304" in card
+    assert "1,234,567 VNĐ / đêm" in card
+    assert "Phòng cơ bản đầy đủ tiện nghi" not in card
+    assert "500,000 VNĐ / đêm" not in card
 
 
 def test_edit_room_can_mark_room_occupied(client):

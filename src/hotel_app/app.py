@@ -144,6 +144,29 @@ ROOM_TYPE_CATALOG = (
 )
 
 
+def _room_type_defaults(room_type: str) -> dict[str, Any] | None:
+    canonical_name = (room_type or "").strip().casefold()
+    return next(
+        (
+            defaults
+            for defaults in ROOM_TYPE_CATALOG
+            if defaults["name"].casefold() == canonical_name
+        ),
+        None,
+    )
+
+
+def _room_display_values(room: Room) -> dict[str, Any]:
+    defaults = _room_type_defaults(room.type)
+    return {
+        "description": room.description
+        or (defaults["description"] if defaults is not None else ""),
+        "price": room.price
+        if room.price > 0
+        else (defaults["price"] if defaults is not None else 0),
+    }
+
+
 def _environment(test_config: dict[str, Any] | None) -> str:
     if test_config and "APP_ENV" in test_config:
         return str(test_config["APP_ENV"])
@@ -540,6 +563,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     def render_room_management(user: User | None, **form_context):
         rooms = _rooms_for_management()
+        room_display_values = {
+            room.id: _room_display_values(room)
+            for room in rooms
+        }
         context = {
             "errors": {},
             "room_number": "",
@@ -556,6 +583,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             "room_management.html",
             user=user,
             rooms=rooms,
+            room_display_values=room_display_values,
             room_count=len(rooms),
             **context,
         )
@@ -762,10 +790,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 for code, label in available_room_types.items()
                 if label == room.type
             ]
-            room_defaults = next(
-                (defaults for defaults in ROOM_TYPE_CATALOG if defaults["name"] == room.type),
-                None,
-            )
+            room_defaults = _room_type_defaults(room.type)
             if room_defaults is not None:
                 if room.price <= 0:
                     price_input = str(room_defaults["price"])
