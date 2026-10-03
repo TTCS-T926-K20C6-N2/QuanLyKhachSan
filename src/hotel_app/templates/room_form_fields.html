@@ -1,0 +1,63 @@
+<form class="room-form" method="post" action="{{ url_for('edit_room', room_number=edit_room_number) if update_mode else url_for('create_room') }}" enctype="multipart/form-data" novalidate>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="modal_form" value="{{ '1' if modal_form else '0' }}">
+
+  <div class="room-form__grid">
+    <div class="form-field">
+      <label for="room-number">Mã phòng</label>
+      <input id="room-number" name="room_number" type="text" value="{{ room_number }}" maxlength="20" pattern="[A-Za-z0-9_-]+" required aria-describedby="room-number-error">
+      {% if errors.get('room_number') %}<small class="field-error" id="room-number-error">{{ errors.room_number }}</small>{% endif %}
+    </div>
+
+    <div class="form-field">
+      <label for="room-price">Giá thuê / đêm (VNĐ)</label>
+      <input id="room-price" name="price" type="number" value="{{ price }}" min="1" step="1" required aria-describedby="room-price-error">
+      {% if errors.get('price') %}<small class="field-error" id="room-price-error">{{ errors.price }}</small>{% endif %}
+    </div>
+
+    <div class="form-field room-type-options">
+      <label for="room-type">Thể loại phòng</label>
+      <select id="room-type" name="room_type" required aria-describedby="room-type-error">
+        <option value="">Chọn thể loại phòng</option>
+        {% for code, label in room_types.items() %}
+          <option value="{{ code }}"{% if code in selected_types %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      {% if errors.get('room_type') %}<small class="field-error" id="room-type-error">{{ errors.room_type }}</small>{% endif %}
+    </div>
+
+    {% if update_mode %}
+      <div class="form-field">
+        <label for="room-status">Trạng thái phòng</label>
+        <select id="room-status" name="status" required aria-describedby="room-status-error">
+          <option value="Phòng trống"{% if status == 'Phòng trống' %} selected{% endif %}>Phòng trống</option>
+          <option value="Đang thuê"{% if status == 'Đang thuê' %} selected{% endif %}>Đang thuê</option>
+        </select>
+        {% if errors.get('status') %}<small class="field-error" id="room-status-error">{{ errors.status }}</small>{% endif %}
+      </div>
+    {% endif %}
+
+    <div class="form-field form-field--wide">
+      <label for="room-description">Mô tả ngắn</label>
+      <textarea id="room-description" name="description" rows="3" maxlength="200" required aria-describedby="room-description-error">{{ description }}</textarea>
+      {% if errors.get('description') %}<small class="field-error" id="room-description-error">{{ errors.description }}</small>{% endif %}
+    </div>
+
+    <div class="form-field form-field--wide">
+      <label for="room-image">Hình ảnh phòng</label>
+      <input id="room-image" name="image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"{% if not update_mode %} required{% endif %} aria-describedby="room-image-help room-image-error">
+      <small id="room-image-help" class="field-hint">{% if update_mode %}Chọn ảnh mới nếu muốn thay ảnh hiện tại. {% endif %}JPG, PNG hoặc WEBP, tối đa 5 MB.</small>
+      {% if update_mode and current_image %}<small class="field-hint">Ảnh hiện tại: {{ current_image }}</small>{% endif %}
+      {% if errors.get('image') %}<small class="field-error" id="room-image-error">{{ errors.image }}</small>{% endif %}
+    </div>
+  </div>
+
+  <div class="room-form__footer">
+    {% if modal_form %}
+      <button class="action-button" id="cancel-room-dialog" type="button">Hủy</button>
+    {% else %}
+      <a class="action-button" href="{{ url_for('room_management') }}">Hủy</a>
+    {% endif %}
+    <button class="action-button action-button--primary" type="submit">{{ 'Lưu cập nhật' if update_mode else 'Thêm phòng' }}</button>
+  </div>
+</form>

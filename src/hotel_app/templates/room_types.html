@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Thể loại phòng | Hotel Management{% endblock %}
+
+{% block content %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <p class="form-alert{% if category == 'error' %} form-alert--error{% endif %}" role="status">{{ message }}</p>
+    {% endfor %}
+  {% endwith %}
+
+  {% if service_error %}
+    <p class="form-alert form-alert--error" role="alert">{{ service_error }}</p>
+  {% endif %}
+
+  {% if create_room_type %}
+    <dialog class="room-dialog" id="room-type-dialog" aria-labelledby="room-type-create-title" data-open-on-load>
+      <header class="room-dialog__header">
+        <div>
+          <p class="page-kicker">Danh mục phòng</p>
+          <h2 id="room-type-create-title">Thêm thể loại phòng</h2>
+          <p class="room-dialog__subtitle">Nhập tên thể loại phòng mới.</p>
+        </div>
+        <button class="room-dialog__close" id="close-room-type-dialog" type="button" aria-label="Đóng" title="Đóng">
+          <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+        </button>
+      </header>
+      {% if service_error %}<p class="form-alert form-alert--error room-dialog__alert" role="alert">{{ service_error }}</p>{% endif %}
+      <form class="room-form" method="post" action="{{ url_for('create_room_type') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="room-form__grid">
+          <div class="form-field">
+            <label for="room-type-name">Tên thể loại phòng</label>
+            <input id="room-type-name" name="name" type="text" maxlength="120" value="{{ form_values.name }}" required>
+            {% if errors.name %}<span class="field-error">{{ errors.name }}</span>{% endif %}
+          </div>
+        </div>
+        <footer class="room-form__footer">
+          <button class="action-button" id="cancel-room-type-dialog" type="button">Hủy</button>
+          <button class="action-button action-button--primary" type="submit">Thêm thể loại phòng</button>
+        </footer>
+      </form>
+    </dialog>
+    <script>
+      const roomTypeDialog = document.getElementById("room-type-dialog");
+      document.getElementById("close-room-type-dialog").addEventListener("click", () => {
+        window.location.assign("{{ url_for('room_types') }}");
+      });
+      document.getElementById("cancel-room-type-dialog").addEventListener("click", () => {
+        window.location.assign("{{ url_for('room_types') }}");
+      });
+      if (roomTypeDialog.hasAttribute("data-open-on-load")) {
+        roomTypeDialog.showModal();
+      }
+    </script>
+  {% endif %}
+
+  <dialog class="room-dialog room-type-edit-dialog" id="room-type-edit-dialog" aria-labelledby="room-type-edit-title"{% if edit_room_type %} data-open-on-load data-source-id="{{ edit_room_type.id }}" data-source-name="{{ edit_room_type.name }}" data-room-count="{{ room_type_counts[edit_room_type.id] }}" data-occupied-count="{{ room_type_occupied_counts[edit_room_type.id] }}" data-target-id="{{ form_values.target_room_type_id|default('') }}"{% endif %}>
+    <header class="room-dialog__header">
+      <div>
+        <p class="page-kicker">Danh mục phòng</p>
+        <h2 id="room-type-edit-title">Cập nhật thể loại phòng</h2>
+        <p class="room-dialog__subtitle">Đổi tên thể loại và chuyển phòng nếu cần.</p>
+      </div>
+      <button class="room-dialog__close" id="close-room-type-edit-dialog" type="button" aria-label="Đóng" title="Đóng">
+        <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+      </button>
+    </header>
+    {% if service_error %}<p class="form-alert form-alert--error room-dialog__alert" role="alert">{{ service_error }}</p>{% endif %}
+    <form class="room-form room-type-edit-form" id="room-type-update-form" method="post"{% if edit_room_type %} action="{{ url_for('edit_room_type', room_type_id=edit_room_type.id) }}"{% endif %}>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <section class="room-type-edit-section" aria-labelledby="room-type-rename-title">
+        <h3 id="room-type-rename-title">Đổi tên thể loại phòng</h3>
+        <div class="form-field">
+          <label for="room-type-edit-name">Tên thể loại phòng</label>
+          <input id="room-type-edit-name" name="name" type="text" maxlength="120" value="{{ (form_values|default({})).get('name', '') }}" required>
+          {% if (errors|default({})).get('name') %}<span class="field-error">{{ errors.name }}</span>{% endif %}
+        </div>
+      </section>
+      <section class="room-type-edit-section" aria-labelledby="room-type-transfer-title">
+        <h3 id="room-type-transfer-title">Chuyển toàn bộ phòng</h3>
+        <p class="room-type-transfer-summary">Nguồn: <strong id="room-type-source-name"></strong> · <span id="room-type-source-count"></span> phòng</p>
+        <p class="room-type-transfer-warning" id="room-type-occupied-warning" hidden></p>
+        <p class="field-hint" id="room-type-empty-source" hidden>Không có phòng để chuyển.</p>
+        {% if transfer_error %}<p class="field-error" role="alert">{{ transfer_error }}</p>{% endif %}
+        <div class="form-field">
+          <label for="room-type-target">Chuyển sang</label>
+          <select id="room-type-target" name="target_room_type_id">
+            <option value="">Không chuyển đổi</option>
+          </select>
+        </div>
+      </section>
+    </form>
+    <footer class="room-type-edit-footer">
+      <div class="room-type-edit-footer__buttons">
+        <button class="action-button" id="cancel-room-type-edit-dialog" type="button">Hủy</button>
+        <button class="action-button action-button--primary" id="room-type-update-submit" type="submit" form="room-type-update-form">Cập nhật</button>
+      </div>
+    </footer>
+  </dialog>
+  <script>
+    const roomTypeEditDialog = document.getElementById("room-type-edit-dialog");
+    const roomTypeTargets = {{ room_type_targets|tojson }};
+    const roomTypeUpdateForm = document.getElementById("room-type-update-form");
+    const roomTypeTargetSelect = document.getElementById("room-type-target");
+    const roomTypeSourceName = document.getElementById("room-type-source-name");
+    const roomTypeSourceCount = document.getElementById("room-type-source-count");
+    const roomTypeOccupiedWarning = document.getElementById("room-type-occupied-warning");
+    const roomTypeEmptySource = document.getElementById("room-type-empty-source");
+    function openRoomTypeEditDialog(sourceId, sourceName, roomCount, occupiedCount, targetId = "", restoreValues = false) {
+      roomTypeUpdateForm.action = `/room-types/${sourceId}/edit`;
+      if (!restoreValues) document.getElementById("room-type-edit-name").value = sourceName;
+      roomTypeSourceName.textContent = sourceName;
+      roomTypeSourceCount.textContent = roomCount;
+      roomTypeOccupiedWarning.hidden = occupiedCount === 0;
+      roomTypeOccupiedWarning.textContent = `${occupiedCount} phòng đang thuê sẽ giữ nguyên trạng thái và thời gian lưu trú.`;
+      roomTypeEmptySource.hidden = roomCount > 0;
+      roomTypeTargetSelect.replaceChildren(new Option("Không chuyển đổi", ""));
+      roomTypeTargets.forEach((target) => {
+        if (String(target.id) !== String(sourceId)) {
+          roomTypeTargetSelect.add(new Option(target.name, target.id));
+        }
+      });
+      roomTypeTargetSelect.value = targetId;
+      roomTypeTargetSelect.disabled = roomCount === 0;
+      roomTypeEditDialog.showModal();
+    }
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest(".room-type-edit-trigger");
+      if (!button) return;
+      openRoomTypeEditDialog(
+        button.dataset.sourceId,
+        button.dataset.sourceName,
+        Number(button.dataset.roomCount),
+        Number(button.dataset.occupiedCount),
+      );
+    });
+    roomTypeUpdateForm.addEventListener("submit", (event) => {
+      if (!roomTypeTargetSelect.value) return;
+      const targetName = roomTypeTargetSelect.selectedOptions[0].textContent;
+      const roomCount = Number(roomTypeSourceCount.textContent);
+      const occupiedCount = Number(roomTypeOccupiedWarning.hidden ? 0 : roomTypeOccupiedWarning.textContent.match(/^\d+/)[0]);
+      let message = `Bạn có chắc muốn chuyển toàn bộ ${roomCount} phòng từ ${roomTypeSourceName.textContent} sang ${targetName} không?`;
+      if (occupiedCount > 0) message += ` Lưu ý: ${occupiedCount} phòng đang thuê sẽ được giữ nguyên trạng thái và thời gian lưu trú.`;
+      if (!window.confirm(message)) event.preventDefault();
+    });
+    document.getElementById("close-room-type-edit-dialog").addEventListener("click", () => roomTypeEditDialog.close());
+    document.getElementById("cancel-room-type-edit-dialog").addEventListener("click", () => roomTypeEditDialog.close());
+    if (roomTypeEditDialog.hasAttribute("data-open-on-load")) {
+      openRoomTypeEditDialog(
+        roomTypeEditDialog.dataset.sourceId,
+        roomTypeEditDialog.dataset.sourceName,
+        Number(roomTypeEditDialog.dataset.roomCount),
+        Number(roomTypeEditDialog.dataset.occupiedCount),
+        roomTypeEditDialog.dataset.targetId,
+        true,
+      );
+    }
+  </script>
+
+  <section class="dashboard-panel room-types-page" aria-labelledby="room-types-table-title">
+    <header class="panel-header">
+      <div>
+        <h2 id="room-types-table-title">Danh sách thể loại phòng</h2>
+      </div>
+      <a class="action-button action-button--primary room-type-add" href="{{ url_for('create_room_type') }}">
+        <span aria-hidden="true">+</span> Thêm thể loại phòng
+      </a>
+    </header>
+
+    <div class="room-type-table-wrap">
+      <table class="room-type-table">
+        <thead>
+          <tr>
+            <th scope="col">STT</th>
+            <th scope="col">Tên thể loại phòng</th>
+            <th scope="col">Số phòng</th>
+            <th scope="col">Hành động</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for room_type in room_types %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td><strong>{{ room_type.name }}</strong></td>
+              <td class="room-type-count">{{ room_type_counts[room_type.id] }}</td>
+              <td>
+                <div class="table-actions">
+                  <button class="action-button action-button--edit room-type-edit-trigger" type="button" data-source-id="{{ room_type.id }}" data-source-name="{{ room_type.name }}" data-room-count="{{ room_type_counts[room_type.id] }}" data-occupied-count="{{ room_type_occupied_counts[room_type.id] }}">Cập nhật</button>
+                  <form method="post" action="{{ url_for('delete_room_type', room_type_id=room_type.id) }}" onsubmit="return window.confirm(this.dataset.confirm)" data-confirm="Bạn có chắc chắn muốn xóa thể loại phòng: {{ room_type.name }}?">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="action-button action-button--delete" type="submit">Xóa</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td class="room-type-empty" colspan="4">
+                Chưa có thể loại phòng nào.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

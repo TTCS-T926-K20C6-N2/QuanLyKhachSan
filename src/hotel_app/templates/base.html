@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Hotel Management{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/hotel.css') }}">
+    {% block head %}{% endblock %}
+  </head>
+  <body class="app-body">
+    {% set current_email = user.email if user is defined and user else 'Tài khoản' %}
+
+    <a class="skip-link" href="#main-content">Đi tới nội dung chính</a>
+
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-menu" viewBox="0 0 24 24">
+        <path d="M4 7h16M4 12h16M4 17h16"></path>
+      </symbol>
+      <symbol id="icon-home" viewBox="0 0 24 24">
+        <path d="m3 11 9-7 9 7"></path>
+        <path d="M5.5 9.5V20h13V9.5M9.5 20v-6h5v6"></path>
+      </symbol>
+      <symbol id="icon-rooms" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="7" height="7" rx="1"></rect>
+        <rect x="14" y="4" width="7" height="7" rx="1"></rect>
+        <rect x="3" y="15" width="7" height="6" rx="1"></rect>
+        <rect x="14" y="15" width="7" height="6" rx="1"></rect>
+      </symbol>
+      <symbol id="icon-map" viewBox="0 0 24 24">
+        <path d="m3 6 5-2 8 3 5-2v13l-5 2-8-3-5 2Z"></path>
+        <path d="M8 4v13M16 7v13"></path>
+      </symbol>
+      <symbol id="icon-key" viewBox="0 0 24 24">
+        <circle cx="8" cy="15" r="4"></circle>
+        <path d="m11 12 8-8M16 7l2 2M14 9l2 2"></path>
+      </symbol>
+      <symbol id="icon-return" viewBox="0 0 24 24">
+        <path d="M9 7 4 12l5 5"></path>
+        <path d="M5 12h9a5 5 0 0 1 5 5v2"></path>
+      </symbol>
+      <symbol id="icon-receipt" viewBox="0 0 24 24">
+        <path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z"></path>
+        <path d="M9 8h6M9 12h6M9 16h3"></path>
+      </symbol>
+      <symbol id="icon-wallet" viewBox="0 0 24 24">
+        <path d="M4 7a3 3 0 0 1 3-3h11v16H6a2 2 0 0 1-2-2Z"></path>
+        <path d="M4 8h14M15 12h5v4h-5a2 2 0 0 1 0-4Z"></path>
+      </symbol>
+      <symbol id="icon-chart" viewBox="0 0 24 24">
+        <path d="M4 20V10M10 20V4M16 20v-7M22 20V7"></path>
+      </symbol>
+      <symbol id="icon-report" viewBox="0 0 24 24">
+        <path d="M6 3h9l4 4v14H6Z"></path>
+        <path d="M14 3v5h5M9 12h6M9 16h6"></path>
+      </symbol>
+      <symbol id="icon-user" viewBox="0 0 24 24">
+        <circle cx="12" cy="8" r="4"></circle>
+        <path d="M4 21a8 8 0 0 1 16 0"></path>
+      </symbol>
+      <symbol id="icon-lock" viewBox="0 0 24 24">
+        <rect x="5" y="10" width="14" height="11" rx="2"></rect>
+        <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+      </symbol>
+      <symbol id="icon-logout" viewBox="0 0 24 24">
+        <path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"></path>
+      </symbol>
+      <symbol id="icon-chevron" viewBox="0 0 24 24">
+        <path d="m6 9 6 6 6-6"></path>
+      </symbol>
+      <symbol id="icon-bell" viewBox="0 0 24 24">
+        <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+        <path d="M10 21h4"></path>
+      </symbol>
+      <symbol id="icon-building" viewBox="0 0 24 24">
+        <path d="M4 21V4h11v17M15 10h5v11M8 8h3M8 12h3M8 16h3M3 21h18"></path>
+      </symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9"></circle>
+        <path d="m8 12 3 3 5-6"></path>
+      </symbol>
+      <symbol id="icon-close" viewBox="0 0 24 24">
+        <path d="m6 6 12 12M18 6 6 18"></path>
+      </symbol>
+    </svg>
+
+    <div class="dashboard-shell">
+      <header class="topbar">
+        <div class="brand-area">
+          <span class="brand-mark" aria-hidden="true">HM</span>
+          <span class="brand-copy">
+            <strong>HOTEL MANAGEMENT</strong>
+            <small>Hệ thống quản lý khách sạn</small>
+          </span>
+        </div>
+
+        <div class="account-area">
+          <div class="account-identity" role="group" aria-label="Tài khoản: {{ current_email }}">
+            <span class="account-avatar" aria-hidden="true">{{ current_email[:1]|upper }}</span>
+            <span class="account-copy">
+              <strong>{{ current_email }}</strong>
+              <small><span class="online-dot" aria-hidden="true"></span>Đang đăng nhập</small>
+            </span>
+          </div>
+          <button class="topbar-icon account-menu__toggle" id="account-menu-toggle" type="button" aria-label="Menu tài khoản" aria-expanded="false" aria-controls="account-menu">
+            <svg class="icon" aria-hidden="true"><use href="#icon-menu"></use></svg>
+          </button>
+          <div class="account-menu" id="account-menu" aria-labelledby="account-menu-toggle" hidden>
+            <form class="account-menu__form" method="post" action="{{ url_for('logout') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="account-menu__logout" type="submit">
+                <svg class="icon" aria-hidden="true"><use href="#icon-logout"></use></svg>
+                <span>Đăng xuất</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      </header>
+
+      <aside class="sidebar">
+        <nav class="sidebar-nav" aria-label="Điều hướng chính">
+          <div class="nav-section">
+            <a class="nav-link{% if request.endpoint == 'home' %} nav-link--active{% endif %}" href="{{ url_for('home') }}"{% if request.endpoint == 'home' %} aria-current="page"{% endif %}>
+              <svg class="icon"><use href="#icon-home"></use></svg>
+              <span>Trang chủ</span>
+            </a>
+            <a class="nav-link{% if request.endpoint in ['room_management', 'create_room', 'edit_room', 'delete_room'] %} nav-link--active{% endif %}" href="{{ url_for('room_management') }}"{% if request.endpoint in ['room_management', 'create_room', 'edit_room', 'delete_room'] %} aria-current="page"{% endif %}>
+              <svg class="icon"><use href="#icon-rooms"></use></svg>
+              <span>Quản lý phòng</span>
+            </a>
+            <a class="nav-link{% if request.endpoint in ['room_types', 'create_room_type', 'edit_room_type', 'delete_room_type'] %} nav-link--active{% endif %}" href="{{ url_for('room_types') }}"{% if request.endpoint in ['room_types', 'create_room_type', 'edit_room_type', 'delete_room_type'] %} aria-current="page"{% endif %}>
+              <svg class="icon"><use href="#icon-report"></use></svg>
+              <span>Thể loại phòng</span>
+            </a>
+          </div>
+        </nav>
+      </aside>
+
+      <main id="main-content" class="main-content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+    <script>
+      const accountMenuToggle = document.getElementById("account-menu-toggle");
+      const accountMenu = document.getElementById("account-menu");
+      const accountLogoutButton = accountMenu.querySelector("button[type=submit]");
+
+      function closeAccountMenu(restoreFocus = false) {
+        accountMenu.hidden = true;
+        accountMenuToggle.setAttribute("aria-expanded", "false");
+        if (restoreFocus) accountMenuToggle.focus();
+      }
+
+      accountMenuToggle.addEventListener("click", () => {
+        const shouldOpen = accountMenu.hidden;
+        accountMenu.hidden = !shouldOpen;
+        accountMenuToggle.setAttribute("aria-expanded", String(shouldOpen));
+        if (shouldOpen) accountLogoutButton.focus();
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!event.target.closest(".account-area")) closeAccountMenu();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !accountMenu.hidden) {
+          closeAccountMenu(true);
+        }
+      });
+    </script>
+  </body>
+</html>

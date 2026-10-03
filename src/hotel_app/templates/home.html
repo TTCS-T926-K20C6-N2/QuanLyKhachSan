@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Trang chủ | Hotel Management{% endblock %}
+
+{% block content %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="form-alert{% if category == 'error' %} form-alert--error{% endif %}" role="status">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <section id="home-room-list" class="dashboard-panel" aria-labelledby="home-room-list-title">
+    <header class="panel-header">
+      <div>
+        <h2 id="home-room-list-title">Danh sách phòng</h2>
+        <p>{{ room_count }} phòng</p>
+      </div>
+    </header>
+
+    {% if rooms %}
+      <div class="room-list">
+        <div class="room-grid home-room-grid">
+          {% for room in rooms %}
+            <article class="room-card room-card--{{ room.state }} home-room-card" aria-label="Phòng {{ room.number }}, {{ room.status }}">
+              <div class="room-card__top">
+                <strong class="room-number">{{ room.number }}</strong>
+                <span class="room-status room-status--{{ room.state }}">{{ room.status }}</span>
+              </div>
+              <dl class="room-times">
+                <div>
+                  <dt>Giờ vào</dt>
+                  <dd>{{ room.check_in or "—" }}</dd>
+                </div>
+                <div>
+                  <dt>Giờ ra</dt>
+                  <dd>{{ room.check_out or "—" }}</dd>
+                </div>
+              </dl>
+            </article>
+          {% endfor %}
+        </div>
+      </div>
+    {% else %}
+      <p class="room-empty-state" role="status">Danh sách phòng đang trống.</p>
+    {% endif %}
+  </section>
+{% endblock %}

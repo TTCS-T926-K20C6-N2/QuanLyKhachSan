@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Cập nhật phòng' if update_mode else 'Thêm phòng' }} | Hotel Management{% endblock %}
+
+{% block content %}
+  <section class="page-heading" aria-labelledby="room-form-title">
+    <div>
+      <p class="page-kicker">Quản lý phòng</p>
+      <h1 id="room-form-title">{{ 'Cập nhật phòng' if update_mode else 'Thêm phòng mới' }}</h1>
+      <p class="page-description">{{ 'Chỉnh sửa thông tin phòng và cập nhật ảnh nếu cần.' if update_mode else 'Nhập thông tin phòng và tải ảnh lên hệ thống.' }}</p>
+    </div>
+  </section>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="form-alert form-alert--{{ category }}" role="status">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+  {% if service_error %}<div class="form-alert form-alert--error" role="alert">{{ service_error }}</div>{% endif %}
+
+  <section class="dashboard-panel room-form-panel" aria-labelledby="room-form-section-title">
+    <header class="panel-header">
+      <div>
+        <h2 id="room-form-section-title">Thông tin phòng</h2>
+        <p>{{ 'Cập nhật thông tin phòng hiện tại.' if update_mode else 'Trạng thái ban đầu: Phòng trống' }}</p>
+      </div>
+    </header>
+
+    {% include "room_form_fields.html" %}
+  </section>
+{% endblock %}

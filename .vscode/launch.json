@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python Debugger: Hotel Login",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "flask",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "FLASK_APP": "hotel_app.app",
+        "FLASK_DEBUG": "1",
+        "APP_ENV": "development",
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "envFile": "${workspaceFolder}/.env",
+      "args": [
+        "run",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5000",
+        "--no-debugger",
+        "--no-reload"
+      ],
+      "jinja": true,
+      "justMyCode": true,
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\* Running on (https?://\\S+)",
+        "uriFormat": "%s/login"
+      }
+    }
+  ]
+}
+

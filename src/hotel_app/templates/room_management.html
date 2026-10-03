@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Danh sách phòng | Hotel Management{% endblock %}
+
+{% block content %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      {% if category != 'login_success' %}
+        <div class="form-alert form-alert--{{ category }}" role="status">{{ message }}</div>
+      {% endif %}
+    {% endfor %}
+  {% endwith %}
+
+  <section id="room-list" class="dashboard-panel" aria-labelledby="room-list-title">
+    <header class="panel-header">
+      <div>
+        <h2 id="room-list-title">Danh sách phòng</h2>
+        <p>{{ room_count }} phòng · Chọn màu để nhận biết trạng thái phòng</p>
+      </div>
+      <div class="panel-header__actions">
+        <nav class="room-legend" aria-label="Lọc phòng theo trạng thái">
+          <a
+            class="legend-item room-filter-link{% if not room_filter %} room-filter-link--active{% endif %}"
+            href="{{ url_for('room_management') }}"
+            {% if not room_filter %}aria-current="page"{% endif %}
+          >Tất cả <strong class="room-filter-link__count">{{ room_total_count }}</strong></a>
+          <a
+            class="legend-item room-filter-link{% if room_filter == 'empty' %} room-filter-link--active{% endif %}"
+            href="{{ url_for('room_management', status='empty') }}"
+            {% if room_filter == 'empty' %}aria-current="page"{% endif %}
+          ><span class="legend-dot legend-dot--empty"></span>Phòng trống <strong class="room-filter-link__count">{{ empty_room_count }}</strong></a>
+          <a
+            class="legend-item room-filter-link{% if room_filter == 'occupied' %} room-filter-link--active{% endif %}"
+            href="{{ url_for('room_management', status='occupied') }}"
+            {% if room_filter == 'occupied' %}aria-current="page"{% endif %}
+          ><span class="legend-dot legend-dot--occupied"></span>Đang thuê <strong class="room-filter-link__count">{{ occupied_room_count }}</strong></a>
+        </div>
+        <a class="action-button action-button--primary" id="open-room-dialog" href="{{ url_for('create_room') }}">
+          <span aria-hidden="true">+</span> Thêm phòng
+        </a>
+      </div>
+    </header>
+
+    <div class="room-list" id="room-results"{% if room_filter %} data-filtered{% endif %}>
+      {% if room_list %}
+        <div class="room-grid">
+          {% for room in room_list %}
+            <article
+              class="room-card room-card--{{ room.state }}"
+              aria-label="Phòng {{ room.number }}, {{ room.status }}"
+            >
+              <div class="room-card__top">
+                <strong class="room-number">{{ room.number }}</strong>
+                <span class="room-status room-status--{{ room.state }}">{{ room.status }}</span>
+              </div>
+              {% set default_room_images = {
+                'Phòng đơn': 'images/room-single.jpg',
+                'Phòng đôi': 'images/room-double.jpg',
+                'Phòng VIP': 'images/room-vip.jpg'
+              } %}
+              {% set room_image_url = url_for('room_image', filename=room.image) if room.image else url_for('static', filename=default_room_images.get(room.type, 'images/room-double.jpg')) %}
+              <img class="room-image" src="{{ room_image_url }}" alt="Ảnh phòng {{ room.number }}">
+              <p class="room-type">{{ room.type }}</p>
+              {% set display_values = room_display_values[room.id] %}
+              <p class="room-description">{{ display_values.description or "—" }}</p>
+              <p class="room-price">{% if display_values.price > 0 %}{{ "{:,.0f}".format(display_values.price) }} VNĐ / đêm{% else %}—{% endif %}</p>
+              <dl class="room-times">
+                <div>
+                  <dt>Giờ vào</dt>
+                  <dd>{{ room.check_in or "—" }}</dd>
+                </div>
+                <div>
+                  <dt>Giờ ra</dt>
+                  <dd>{{ room.check_out or "—" }}</dd>
+                </div>
+              </dl>
+              <div class="room-actions">
+                <a class="action-button action-button--edit" href="{{ url_for('edit_room', room_number=room.number) }}">
+                  Cập nhật
+                </a>
+                <form
+                  method="post"
+                  action="{{ url_for('delete_room', room_number=room.number) }}"
+                  class="room-card__delete"
+                  onsubmit="return confirm('Bạn có chắc muốn xóa phòng {{ room.number }}?');"
+                >
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="action-button action-button--delete" aria-label="Xóa phòng {{ room.number }}">
+                    Xóa phòng
+                  </button>
+                </form>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="room-empty-state" role="status">
+          {% if room_filter == 'empty' %}Không có phòng trống.{% elif room_filter == 'occupied' %}Không có phòng đang thuê.{% else %}Danh sách phòng đang trống.{% endif %}
+        </p>
+      {% endif %}
+    </div>
+  </section>
+
+  <dialog class="room-dialog" id="room-dialog" aria-labelledby="room-dialog-title"{% if room_modal_open %} data-open-on-load{% endif %}>
+    <header class="room-dialog__header">
+      <div>
+        <p class="page-kicker">Quản lý phòng</p>
+        <h2 id="room-dialog-title">Thêm phòng mới</h2>
+        <p class="room-dialog__subtitle">Trạng thái ban đầu: Phòng trống</p>
+      </div>
+      <button class="room-dialog__close" id="close-room-dialog" type="button" aria-label="Đóng" title="Đóng">
+        <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+      </button>
+    </header>
+    {% if service_error %}<div class="form-alert form-alert--error room-dialog__alert" role="alert">{{ service_error }}</div>{% endif %}
+    {% include "room_form_fields.html" %}
+  </dialog>
+
+  <script>
+    const roomDialog = document.getElementById("room-dialog");
+    const roomResults = document.getElementById("room-results");
+    if (roomResults.hasAttribute("data-filtered")) {
+      roomResults.scrollIntoView({ block: "start" });
+    }
+    document.getElementById("open-room-dialog").addEventListener("click", (event) => {
+      event.preventDefault();
+      roomDialog.showModal();
+    });
+    document.getElementById("close-room-dialog").addEventListener("click", () => {
+      roomDialog.close();
+    });
+    document.getElementById("cancel-room-dialog").addEventListener("click", () => {
+      roomDialog.close();
+    });
+    if (roomDialog.hasAttribute("data-open-on-load")) {
+      roomDialog.showModal();
+    }
+  </script>
+
+{% endblock %}

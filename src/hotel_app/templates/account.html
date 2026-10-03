@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Thông tin tài khoản | Hotel Management{% endblock %}
+
+{% block content %}
+  <section class="page-heading" aria-labelledby="account-title">
+    <div>
+      <p class="page-kicker">Tài khoản</p>
+      <h1 id="account-title">Thông tin tài khoản</h1>
+      <p class="page-description">Thông tin đăng nhập của tài khoản hiện tại.</p>
+    </div>
+  </section>
+
+  <section class="dashboard-panel account-details" aria-labelledby="account-details-title">
+    <header class="panel-header">
+      <div>
+        <h2 id="account-details-title">Thông tin cơ bản</h2>
+      </div>
+    </header>
+    <dl class="account-details__list">
+      <div>
+        <dt>Email</dt>
+        <dd>{{ user.email }}</dd>
+      </div>
+    </dl>
+  </section>
+{% endblock %}

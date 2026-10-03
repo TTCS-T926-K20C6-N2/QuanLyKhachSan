@@ -1,0 +1,2 @@
+"""Hotel management application package."""
+
