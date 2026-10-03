@@ -603,6 +603,37 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return redirect(url_for("login"))
         return render_room_management(user)
 
+    @app.route("/rooms/<room_number>/checkout", methods=["POST"])
+    def checkout_room(room_number: str):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        normalized_number = str(room_number).strip()
+        room = db.session.execute(
+            db.select(Room).where(Room.number == normalized_number)
+        ).scalar_one_or_none()
+        if room is None:
+            flash(f"Không tìm thấy phòng {normalized_number}.", "error")
+            return redirect(url_for("room_management"))
+
+        if room.status != "Đang thuê" and room.state != "occupied":
+            flash(f"Phòng {normalized_number} không đang được thuê.", "error")
+            return redirect(url_for("room_management"))
+
+        room.status = "Phòng trống"
+        room.state = "empty"
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.exception("A room checkout failed.")
+            flash("Không thể trả phòng. Vui lòng thử lại.", "error")
+            return redirect(url_for("room_management"))
+
+        flash(f"Đã trả phòng {normalized_number} thành công.", "success")
+        return redirect(url_for("room_management"))
+
     @app.route("/rooms/new", methods=["GET", "POST"])
     def create_room():
         user = current_user()
@@ -1432,6 +1463,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(_error: CSRFError):
+        if request.endpoint == "checkout_room":
+            return "Yêu cầu không hợp lệ. Vui lòng tải lại trang.", 400
         if request.endpoint == "create_room_type":
             user = current_user()
             return (
