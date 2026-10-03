@@ -61,6 +61,12 @@
               </div>
             </dl>
             <div class="room-actions">
+              {% if room.status == 'Đang thuê' or room.state == 'occupied' %}
+                <form method="post" action="{{ url_for('checkout_room', room_number=room.number) }}" class="room-card__checkout">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="action-button action-button--checkout">Trả phòng</button>
+                </form>
+              {% endif %}
               <a class="action-button action-button--edit" href="{{ url_for('edit_room', room_number=room.number) }}">
                 Cập nhật
               </a>

@@ -126,6 +126,7 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .action-button--primary:hover,
 .action-button--primary:focus-visible { border-color: var(--blue-800); background: var(--blue-800); }
 .action-button--edit { border-color: #aacbe1; background: #eef8ff; color: #145f91; }
+.action-button--checkout { border-color: #b8e3ca; background: #edf9f1; color: #187344; }
 .action-button--delete { border-color: #efc1bd; background: #fff2f1; color: var(--red); }
 .room-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .legend-item,
@@ -162,6 +163,8 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-times dd { margin: 2px 0 0; color: #17324c; font-size: 0.88rem; font-weight: 750; }
 .room-actions { display: flex; gap: 7px; margin-top: 14px; padding-top: 11px; border-top: 1px solid #e8edf2; }
 .room-card__delete { display: flex; flex: 1; }
+.room-card__checkout { display: flex; flex: 1; }
+.room-card__checkout .action-button { width: 100%; }
 .room-card__delete .action-button { width: 100%; }
 .room-actions .action-button { flex: 1; }
 .room-type-table-wrap { overflow-x: auto; }
