@@ -95,7 +95,11 @@
 
         <div class="account-area">
           <div class="account-identity" role="group" aria-label="Tài khoản: {{ current_email }}">
-            <span class="account-avatar" aria-hidden="true">{{ current_email[:1]|upper }}</span>
+            {% if user is defined and user and user.avatar %}
+              <img class="account-avatar account-avatar--image" src="{{ url_for('profile_image', filename=user.avatar) }}" alt="">
+            {% else %}
+              <span class="account-avatar" aria-hidden="true">{{ (user.full_name[:1] if user is defined and user and user.full_name else current_email[:1])|upper }}</span>
+            {% endif %}
             <span class="account-copy">
               <strong>{{ current_email }}</strong>
               <small><span class="online-dot" aria-hidden="true"></span>Đang đăng nhập</small>
@@ -105,6 +109,10 @@
             <svg class="icon" aria-hidden="true"><use href="#icon-menu"></use></svg>
           </button>
           <div class="account-menu" id="account-menu" aria-labelledby="account-menu-toggle" hidden>
+            <a class="account-menu__item" href="{{ url_for('account') }}">
+              <svg class="icon" aria-hidden="true"><use href="#icon-user"></use></svg>
+              <span>Cập nhật thông tin cá nhân</span>
+            </a>
             <form class="account-menu__form" method="post" action="{{ url_for('logout') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="account-menu__logout" type="submit">
@@ -142,7 +150,7 @@
     <script>
       const accountMenuToggle = document.getElementById("account-menu-toggle");
       const accountMenu = document.getElementById("account-menu");
-      const accountLogoutButton = accountMenu.querySelector("button[type=submit]");
+      const accountMenuFirstItem = accountMenu.querySelector("a, button[type=submit]");
 
       function closeAccountMenu(restoreFocus = false) {
         accountMenu.hidden = true;
@@ -154,7 +162,7 @@
         const shouldOpen = accountMenu.hidden;
         accountMenu.hidden = !shouldOpen;
         accountMenuToggle.setAttribute("aria-expanded", String(shouldOpen));
-        if (shouldOpen) accountLogoutButton.focus();
+        if (shouldOpen) accountMenuFirstItem.focus();
       });
 
       document.addEventListener("click", (event) => {

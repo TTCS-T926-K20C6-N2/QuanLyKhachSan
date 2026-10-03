@@ -6,22 +6,59 @@
   <section class="page-heading" aria-labelledby="account-title">
     <div>
       <p class="page-kicker">Tài khoản</p>
-      <h1 id="account-title">Thông tin tài khoản</h1>
-      <p class="page-description">Thông tin đăng nhập của tài khoản hiện tại.</p>
+      <h1 id="account-title">Cập nhật thông tin cá nhân</h1>
+      <p class="page-description">Quản lý thông tin liên hệ và hồ sơ của bạn.</p>
     </div>
   </section>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="form-alert form-alert--{{ category }}" role="status">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+  {% if errors.get('service') %}<div class="form-alert form-alert--error" role="alert">{{ errors.service }}</div>{% endif %}
 
   <section class="dashboard-panel account-details" aria-labelledby="account-details-title">
     <header class="panel-header">
       <div>
-        <h2 id="account-details-title">Thông tin cơ bản</h2>
+        <h2 id="account-details-title">Hồ sơ cá nhân</h2>
+        <p>Email đăng nhập không thể thay đổi.</p>
       </div>
     </header>
-    <dl class="account-details__list">
-      <div>
-        <dt>Email</dt>
-        <dd>{{ user.email }}</dd>
+    <form class="room-form profile-form" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="room-form__grid">
+        <div class="form-field">
+          <label for="full_name">Họ và tên <span aria-hidden="true">*</span></label>
+          <input id="full_name" name="full_name" type="text" maxlength="120" autocomplete="name" value="{{ full_name }}" required aria-describedby="full-name-error">
+          {% if errors.get('full_name') %}<span class="field-error" id="full-name-error">{{ errors.full_name }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+          <label for="birth_date">Ngày sinh <span aria-hidden="true">*</span></label>
+          <input id="birth_date" name="birth_date" type="date" value="{{ birth_date }}" max="{{ today }}" required aria-describedby="birth-date-error">
+          {% if errors.get('birth_date') %}<span class="field-error" id="birth-date-error">{{ errors.birth_date }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" value="{{ user.email }}" readonly aria-readonly="true">
+          <span class="field-hint">Email được cố định theo tài khoản đăng nhập.</span>
+        </div>
+        <div class="form-field">
+          <label for="phone">Số điện thoại <span aria-hidden="true">*</span></label>
+          <input id="phone" name="phone" type="tel" maxlength="30" autocomplete="tel" value="{{ phone }}" required aria-describedby="phone-error">
+          {% if errors.get('phone') %}<span class="field-error" id="phone-error">{{ errors.phone }}</span>{% endif %}
+        </div>
+        <div class="form-field form-field--wide">
+          <label for="avatar">Ảnh đại diện</label>
+          {% if user.avatar %}<img class="profile-avatar-preview" src="{{ url_for('profile_image', filename=user.avatar) }}" alt="Ảnh đại diện hiện tại">{% endif %}
+          <input id="avatar" name="avatar" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="avatar-hint avatar-error">
+          <span class="field-hint" id="avatar-hint">JPG, PNG hoặc WEBP, tối đa 5 MB. Để trống nếu không đổi ảnh.</span>
+          {% if errors.get('avatar') %}<span class="field-error" id="avatar-error">{{ errors.avatar }}</span>{% endif %}
+        </div>
       </div>
-    </dl>
+      <footer class="room-form__footer">
+        <button class="action-button action-button--primary" type="submit">Lưu thông tin</button>
+      </footer>
+    </form>
   </section>
 {% endblock %}

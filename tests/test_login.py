@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from datetime import date
+from io import BytesIO
 
 from hotel_app.app import (
     DEVELOPMENT_DEMO_EMAIL,
@@ -53,7 +55,7 @@ def test_valid_credentials_create_session_and_redirect_home(client):
     assert 'class="page-heading"' not in home_html
     assert '<h2 id="home-room-list-title">Danh sách phòng</h2>' in home_html
     assert 'class="room-card room-card--empty home-room-card"' in home_html
-    assert "Cập nhật" not in home_html
+    assert "Cập nhật phòng" not in home_html
     assert "Xóa phòng" not in home_html
     assert home_html.count("Đăng nhập thành công") == 1
 
@@ -155,7 +157,7 @@ def test_home_lists_sqlite_rooms_with_current_status_and_times(client, app):
     assert "14:30" in html
     assert "11:00" in html
     assert html.count("<dd>—</dd>") == 22
-    assert "Cập nhật" not in html
+    assert "Cập nhật phòng" not in html
     assert "Xóa phòng" not in html
 
 
@@ -192,20 +194,27 @@ def test_sidebar_has_three_ordered_links_and_correct_active_state(client):
     assert 'href="/room-types" aria-current="page"' in room_types
 
 
-def test_account_page_is_disabled(client):
+def test_account_page_shows_editable_personal_information(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
 
     response = client.get("/account")
 
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith("/rooms")
+    assert response.status_code == 200
+    page = response.get_data(as_text=True)
+    assert "Cập nhật thông tin cá nhân" in page
+    assert 'name="full_name"' in page
+    assert 'name="birth_date"' in page
+    assert 'name="phone"' in page
+    assert 'name="email"' in page and "readonly" in page
+    assert 'enctype="multipart/form-data"' in page
 
 
-def test_account_info_menu_item_is_removed(client):
+def test_account_info_menu_item_opens_profile_form(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
     page = client.get("/").get_data(as_text=True)
 
-    assert "Thông tin tài khoản" not in page
+    assert 'href="/account"' in page
+    assert "Cập nhật thông tin cá nhân" in page
 
 
 def test_account_menu_logout_clears_session_and_redirects_to_login(client):
@@ -216,6 +225,7 @@ def test_account_menu_logout_clears_session_and_redirects_to_login(client):
         r'<header class="topbar">.*?'
         r'<button class="topbar-icon account-menu__toggle" id="account-menu-toggle" type="button" aria-label="Menu tài khoản" aria-expanded="false" aria-controls="account-menu">.*?'
         r'<div class="account-menu" id="account-menu" aria-labelledby="account-menu-toggle" hidden>.*?'
+        r'<a class="account-menu__item" href="/account">.*?Cập nhật thông tin cá nhân</span>.*?</a>.*?'
         r'<form class="account-menu__form" method="post" action="/logout">.*?'
         r'<button class="account-menu__logout" type="submit">.*?Đăng xuất',
         page,
@@ -244,12 +254,90 @@ def test_topbar_account_menu_has_one_logout_action(client):
 
     page = client.get("/rooms").get_data(as_text=True)
 
-    assert "Thông tin tài khoản" not in page
+    assert "Cập nhật thông tin cá nhân" in page
+    assert page.count('href="/account"') == 1
     assert page.count("Đăng xuất") == 1
     assert 'method="post" action="/logout"' in page
     assert 'aria-expanded="false" aria-controls="account-menu"' in page
     assert '<form class="sidebar-logout"' not in page
     assert 'id="icon-menu"' in page
+
+
+def test_profile_update_persists_fields_and_avatar_without_changing_email(client, app):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+    profile_page = client.get("/account").get_data(as_text=True)
+    csrf_token = re.search(
+        r'name="csrf_token"[^>]*value="([^"]+)"', profile_page
+    ).group(1)
+
+    response = client.post(
+        "/account",
+        data={
+            "csrf_token": csrf_token,
+            "full_name": "  Nguyễn An  ",
+            "birth_date": "1990-04-12",
+            "email": "changed@example.test",
+            "phone": "+84 912 345 678",
+            "avatar": (BytesIO(b"\x89PNG\r\n\x1a\nprofile-image"), "avatar.png"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/account")
+    page = client.get("/account").get_data(as_text=True)
+    assert "Cập nhật thông tin cá nhân thành công." in page
+    assert "1990-04-12" in page
+    with app.app_context():
+        user = db.session.execute(
+            db.select(User).where(User.email == normalize_email(DEMO_EMAIL))
+        ).scalar_one()
+        assert user.full_name == "Nguyễn An"
+        assert user.birth_date == date(1990, 4, 12)
+        assert user.phone == "+84 912 345 678"
+        assert user.email == normalize_email(DEMO_EMAIL)
+        avatar_name = user.avatar
+
+    avatar_response = client.get(f"/profile-images/{avatar_name}")
+    assert avatar_response.status_code == 200
+    assert avatar_response.data.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_profile_rejects_invalid_required_fields_and_avatar(client, app):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+    profile_page = client.get("/account").get_data(as_text=True)
+    csrf_token = re.search(
+        r'name="csrf_token"[^>]*value="([^"]+)"', profile_page
+    ).group(1)
+
+    response = client.post(
+        "/account",
+        data={
+            "csrf_token": csrf_token,
+            "full_name": "",
+            "birth_date": "2999-01-01",
+            "email": "changed@example.test",
+            "phone": "abc",
+            "avatar": (BytesIO(b"not-an-image"), "avatar.png"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    page = response.get_data(as_text=True)
+    assert "Vui lòng nhập họ và tên." in page
+    assert "Ngày sinh không hợp lệ." in page
+    assert "Số điện thoại không hợp lệ." in page
+    assert "Ảnh đại diện phải là JPG, PNG hoặc WEBP hợp lệ." in page
+    with app.app_context():
+        user = db.session.execute(
+            db.select(User).where(User.email == normalize_email(DEMO_EMAIL))
+        ).scalar_one()
+        assert user.full_name == ""
+        assert user.birth_date is None
+        assert user.phone == ""
+        assert user.email == normalize_email(DEMO_EMAIL)
+        assert user.avatar is None
 
 
 def test_database_contains_scrypt_hash_not_plaintext(app):

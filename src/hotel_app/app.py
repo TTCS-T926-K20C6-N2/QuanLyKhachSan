@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from flask import Flask, flash, redirect, render_template, request, send_from_directory, session, url_for
 from flask_wtf.csrf import CSRFError
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.utils import secure_filename
 
@@ -33,6 +35,12 @@ DEVELOPMENT_DEMO_EMAIL = "demo@example.test"
 DEVELOPMENT_DEMO_PASSWORD = "Demo1@Hotel2026"
 TRUE_VALUES = {"1", "true", "yes", "on"}
 ALLOWED_ROOM_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+PROFILE_IMAGE_SIGNATURES = {
+    "jpg": (b"\xff\xd8\xff",),
+    "jpeg": (b"\xff\xd8\xff",),
+    "png": (b"\x89PNG\r\n\x1a\n",),
+    "webp": (b"RIFF",),
+}
 ROOM_IMAGE_SIGNATURES = {
     "jpg": (b"\xff\xd8\xff",),
     "jpeg": (b"\xff\xd8\xff",),
@@ -970,12 +978,111 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         flash(f"Đã xóa phòng {normalized_number}.", "success")
         return redirect(url_for("room_management"))
 
-    @app.route("/account")
+    @app.route("/account", methods=["GET", "POST"])
     def account():
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
-        return redirect(url_for("room_management"))
+
+        errors: dict[str, str] = {}
+        full_name = user.full_name
+        birth_date = user.birth_date.isoformat() if user.birth_date else ""
+        phone = user.phone
+        avatar_upload = None
+
+        if request.method == "POST":
+            full_name = request.form.get("full_name", "").strip()
+            birth_date = request.form.get("birth_date", "").strip()
+            phone = request.form.get("phone", "").strip()
+
+            if not full_name:
+                errors["full_name"] = "Vui lòng nhập họ và tên."
+            elif len(full_name) > 120:
+                errors["full_name"] = "Họ và tên không được vượt quá 120 ký tự."
+
+            parsed_birth_date = None
+            if not birth_date:
+                errors["birth_date"] = "Vui lòng chọn ngày sinh."
+            else:
+                try:
+                    parsed_birth_date = date.fromisoformat(birth_date)
+                    if parsed_birth_date.isoformat() != birth_date or parsed_birth_date > date.today():
+                        raise ValueError
+                except ValueError:
+                    errors["birth_date"] = "Ngày sinh không hợp lệ."
+
+            digits_only = re.sub(r"\D", "", phone)
+            if not phone:
+                errors["phone"] = "Vui lòng nhập số điện thoại."
+            elif not re.fullmatch(r"\+?[0-9][0-9\s().-]*", phone) or not 9 <= len(digits_only) <= 15:
+                errors["phone"] = "Số điện thoại không hợp lệ."
+
+            avatar_upload = request.files.get("avatar")
+            avatar_data = b""
+            avatar_extension = ""
+            if avatar_upload and avatar_upload.filename:
+                safe_name = secure_filename(avatar_upload.filename)
+                avatar_extension = safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else ""
+                avatar_data = avatar_upload.read(5 * 1024 * 1024 + 1)
+                signatures = PROFILE_IMAGE_SIGNATURES.get(avatar_extension, ())
+                valid_signature = any(avatar_data.startswith(signature) for signature in signatures)
+                if avatar_extension not in ALLOWED_ROOM_IMAGE_EXTENSIONS or not valid_signature:
+                    errors["avatar"] = "Ảnh đại diện phải là JPG, PNG hoặc WEBP hợp lệ."
+                elif len(avatar_data) > 5 * 1024 * 1024:
+                    errors["avatar"] = "Ảnh đại diện không được vượt quá 5 MB."
+                elif avatar_extension == "webp" and avatar_data[8:12] != b"WEBP":
+                    errors["avatar"] = "Ảnh WEBP không hợp lệ."
+
+            if not errors:
+                old_avatar = user.avatar
+                avatar_name = None
+                avatar_path = None
+                upload_folder = Path(app.config["ROOM_UPLOAD_FOLDER"])
+                try:
+                    if avatar_data:
+                        avatar_name = f"profile-{secrets.token_hex(16)}.{avatar_extension}"
+                        avatar_path = upload_folder / avatar_name
+                        upload_folder.mkdir(parents=True, exist_ok=True)
+                        avatar_path.write_bytes(avatar_data)
+
+                    user.full_name = full_name
+                    user.birth_date = parsed_birth_date
+                    user.phone = phone
+                    if avatar_name:
+                        user.avatar = avatar_name
+                    db.session.commit()
+                except SQLAlchemyError:
+                    db.session.rollback()
+                    if avatar_path:
+                        avatar_path.unlink(missing_ok=True)
+                    app.logger.exception("A user profile update failed.")
+                    errors["service"] = "Không thể cập nhật thông tin. Vui lòng thử lại."
+                except OSError:
+                    db.session.rollback()
+                    if avatar_path:
+                        avatar_path.unlink(missing_ok=True)
+                    errors["service"] = "Không thể lưu ảnh đại diện. Vui lòng thử lại."
+                else:
+                    if avatar_name and old_avatar and Path(old_avatar).name == old_avatar:
+                        (upload_folder / old_avatar).unlink(missing_ok=True)
+                    flash("Cập nhật thông tin cá nhân thành công.", "success")
+                    return redirect(url_for("account"))
+
+        return render_template(
+            "account.html",
+            user=user,
+            errors=errors,
+            full_name=full_name,
+            birth_date=birth_date,
+            phone=phone,
+            today=date.today().isoformat(),
+        )
+
+    @app.route("/profile-images/<path:filename>")
+    def profile_image(filename: str):
+        if current_user() is None:
+            return redirect(url_for("login"))
+        return send_from_directory(app.config["ROOM_UPLOAD_FOLDER"], filename)
 
     @app.route("/logout", methods=["POST"])
     def logout():
@@ -1459,6 +1566,19 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     with app.app_context():
         db.create_all()
+        user_columns = {column["name"] for column in inspect(db.engine).get_columns("users")}
+        profile_columns = {
+            "full_name": "VARCHAR(120) NOT NULL DEFAULT ''",
+            "birth_date": "DATE",
+            "phone": "VARCHAR(30) NOT NULL DEFAULT ''",
+            "avatar": "VARCHAR(255)",
+        }
+        with db.engine.begin() as connection:
+            for column_name, column_definition in profile_columns.items():
+                if column_name not in user_columns:
+                    connection.execute(
+                        text(f"ALTER TABLE users ADD COLUMN {column_name} {column_definition}")
+                    )
         _seed_demo_user(app)
         _seed_room_types()
         _seed_rooms()
