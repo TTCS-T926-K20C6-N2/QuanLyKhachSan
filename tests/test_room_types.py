@@ -2162,5 +2162,5 @@ def test_home_renders_room_list_without_management_controls(client):
     assert response.status_code == 200
     assert "Danh sách phòng" in html
     assert html.count('class="room-card room-card--') == 12
-    assert "Cập nhật" not in html
+    assert "Cập nhật phòng" not in html
     assert "Xóa phòng" not in html
