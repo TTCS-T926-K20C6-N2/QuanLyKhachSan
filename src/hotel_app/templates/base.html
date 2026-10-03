@@ -127,10 +127,27 @@
               <svg class="icon"><use href="#icon-rooms"></use></svg>
               <span>Quản lý phòng</span>
             </a>
-            <a class="nav-link{% if request.endpoint in ['room_types', 'create_room_type', 'edit_room_type', 'delete_room_type'] %} nav-link--active{% endif %}" href="{{ url_for('room_types') }}"{% if request.endpoint in ['room_types', 'create_room_type', 'edit_room_type', 'delete_room_type'] %} aria-current="page"{% endif %}>
-              <svg class="icon"><use href="#icon-report"></use></svg>
-              <span>Thể loại phòng</span>
-            </a>
+            <section class="nav-section nav-section--accordion">
+              <button
+                class="nav-link nav-link--accordion{% if request.endpoint in ['room_types', 'create_room_type', 'edit_room_type', 'delete_room_type'] %} nav-link--active{% endif %}"
+                id="room-type-toggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="room-type-submenu"
+              >
+                <svg class="icon" aria-hidden="true"><use href="#icon-report"></use></svg>
+                <span>Thể loại phòng</span>
+                <svg class="icon nav-link__chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+              </button>
+              <ul class="nav-submenu" id="room-type-submenu" hidden>
+                <li><a class="nav-submenu-link" href="{{ url_for('room_management', status='empty') }}">Phòng trống</a></li>
+                <li><a class="nav-submenu-link" href="{{ url_for('room_management', status='occupied') }}">Đang thuê</a></li>
+                <li><a class="nav-submenu-link" href="{{ url_for('room_management') }}">Tất cả phòng</a></li>
+                <li class="nav-submenu__divider">
+                  <a class="nav-submenu-link{% if request.endpoint in ['room_types', 'create_room_type', 'edit_room_type', 'delete_room_type'] %} nav-submenu-link--active{% endif %}" href="{{ url_for('room_types') }}"{% if request.endpoint in ['room_types', 'create_room_type', 'edit_room_type', 'delete_room_type'] %} aria-current="page"{% endif %}>Quản lý thể loại phòng</a>
+                </li>
+              </ul>
+            </section>
           </div>
         </nav>
       </aside>
@@ -140,6 +157,14 @@
       </main>
     </div>
     <script>
+      const roomTypeToggle = document.getElementById("room-type-toggle");
+      const roomTypeSubmenu = document.getElementById("room-type-submenu");
+      roomTypeToggle.addEventListener("click", () => {
+        const isExpanded = roomTypeToggle.getAttribute("aria-expanded") === "true";
+        roomTypeToggle.setAttribute("aria-expanded", String(!isExpanded));
+        roomTypeSubmenu.hidden = isExpanded;
+      });
+
       const accountMenuToggle = document.getElementById("account-menu-toggle");
       const accountMenu = document.getElementById("account-menu");
       const accountLogoutButton = accountMenu.querySelector("button[type=submit]");

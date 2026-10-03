@@ -34,7 +34,7 @@
             href="{{ url_for('room_management', status='occupied') }}"
             {% if room_filter == 'occupied' %}aria-current="page"{% endif %}
           ><span class="legend-dot legend-dot--occupied"></span>Đang thuê <strong class="room-filter-link__count">{{ occupied_room_count }}</strong></a>
-        </div>
+        </nav>
         <a class="action-button action-button--primary" id="open-room-dialog" href="{{ url_for('create_room') }}">
           <span aria-hidden="true">+</span> Thêm phòng
         </a>

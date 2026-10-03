@@ -182,6 +182,12 @@ def test_sidebar_has_three_ordered_links_and_correct_active_state(client):
     home_nav = home.split('<nav class="sidebar-nav"', 1)[1].split("</nav>", 1)[0]
     assert home_nav.index('href="/"') < home_nav.index('href="/rooms"')
     assert home_nav.index('href="/rooms"') < home_nav.index('href="/room-types"')
+    assert 'id="room-type-toggle"' in home_nav
+    assert 'aria-expanded="false"' in home_nav
+    assert 'id="room-type-submenu" hidden' in home_nav
+    assert 'href="/rooms?status=empty">Phòng trống</a>' in home_nav
+    assert 'href="/rooms?status=occupied">Đang thuê</a>' in home_nav
+    assert 'href="/rooms">Tất cả phòng</a>' in home_nav
     assert 'href="/" aria-current="page"' in home_nav
     assert 'href="/rooms" aria-current="page"' not in home_nav
     assert 'href="/room-types" aria-current="page"' not in home_nav
