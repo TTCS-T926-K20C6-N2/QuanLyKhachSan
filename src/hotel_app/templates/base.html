@@ -113,6 +113,10 @@
               <svg class="icon" aria-hidden="true"><use href="#icon-user"></use></svg>
               <span>Cập nhật thông tin cá nhân</span>
             </a>
+            <a class="account-menu__item" href="{{ url_for('change_password') }}">
+              <svg class="icon" aria-hidden="true"><use href="#icon-lock"></use></svg>
+              <span>Đổi mật khẩu</span>
+            </a>
             <form class="account-menu__form" method="post" action="{{ url_for('logout') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="account-menu__logout" type="submit">

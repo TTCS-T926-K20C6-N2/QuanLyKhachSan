@@ -1078,6 +1078,48 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             today=date.today().isoformat(),
         )
 
+    @app.route("/change-password", methods=["GET", "POST"])
+    def change_password():
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        errors: dict[str, str] = {}
+        service_error = None
+
+        if request.method == "POST":
+            new_password = request.form.get("new_password", "")
+            confirm_password = request.form.get("confirm_password", "")
+
+            if not new_password:
+                errors["new_password"] = "Vui lòng nhập mật khẩu mới."
+
+            if not confirm_password:
+                errors["confirm_password"] = "Vui lòng xác nhận mật khẩu mới."
+            elif confirm_password != new_password:
+                errors["confirm_password"] = "Mật khẩu xác nhận không khớp."
+
+            if not errors:
+                user.set_password(new_password)
+                try:
+                    db.session.commit()
+                except SQLAlchemyError:
+                    db.session.rollback()
+                    app.logger.exception("A user password update failed.")
+                    service_error = (
+                        "Không thể đổi mật khẩu. Vui lòng thử lại."
+                    )
+                else:
+                    flash("Đổi mật khẩu thành công", "success")
+                    return redirect(url_for("change_password"))
+
+        return render_template(
+            "change_password.html",
+            user=user,
+            errors=errors,
+            service_error=service_error,
+        )
+
     @app.route("/profile-images/<path:filename>")
     def profile_image(filename: str):
         if current_user() is None:
@@ -1432,6 +1474,21 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(_error: CSRFError):
+        if request.endpoint == "change_password":
+            user = current_user()
+            if user is None:
+                return redirect(url_for("login"))
+            return (
+                render_template(
+                    "change_password.html",
+                    user=user,
+                    errors={},
+                    service_error=(
+                        "Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
+                    ),
+                ),
+                400,
+            )
         if request.endpoint == "create_room_type":
             user = current_user()
             return (
