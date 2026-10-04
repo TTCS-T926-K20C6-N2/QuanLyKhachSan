@@ -1088,8 +1088,20 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         service_error = None
 
         if request.method == "POST":
+            current_password = request.form.get("current_password", "")
             new_password = request.form.get("new_password", "")
             confirm_password = request.form.get("confirm_password", "")
+
+            if not current_password:
+                errors["current_password"] = "Vui lòng nhập mật khẩu hiện tại."
+            else:
+                try:
+                    current_password_is_valid = user.check_password(current_password)
+                except ValueError:
+                    app.logger.error("A User record has an invalid password hash.")
+                    current_password_is_valid = False
+                if not current_password_is_valid:
+                    errors["current_password"] = "Mật khẩu hiện tại không đúng."
 
             if not new_password:
                 errors["new_password"] = "Vui lòng nhập mật khẩu mới."
