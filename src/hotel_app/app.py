@@ -395,6 +395,27 @@ def _migrate_legacy_room_session() -> None:
     session.pop("room_floors", None)
 
 
+ROOM_STATUS_ORDER = ("Phòng trống", "Đang thuê")
+
+
+def _room_status_counts(rooms: list[Room]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for room in rooms:
+        status = (room.status or "").strip()
+        if not status:
+            continue
+        counts[status] = counts.get(status, 0) + 1
+
+    ordered_counts: dict[str, int] = {}
+    for status in ROOM_STATUS_ORDER:
+        if status in counts:
+            ordered_counts[status] = counts[status]
+    for status, count in counts.items():
+        if status not in ordered_counts:
+            ordered_counts[status] = count
+    return ordered_counts
+
+
 def _rooms_for_management() -> list[Room]:
     _migrate_legacy_room_session()
     return db.session.execute(
@@ -569,15 +590,18 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if user is None:
             return redirect(url_for("login"))
         rooms = _rooms_for_management()
+        room_status_counts = _room_status_counts(rooms)
         return render_template(
             "home.html",
             user=user,
             rooms=rooms,
             room_count=len(rooms),
+            room_status_counts=room_status_counts,
         )
 
     def render_room_management(user: User | None, **form_context):
         rooms = _rooms_for_management()
+        room_status_counts = _room_status_counts(rooms)
         room_display_values = {
             room.id: _room_display_values(room)
             for room in rooms
@@ -618,6 +642,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             room_display_values=room_display_values,
             active_room_rentals=active_room_rentals,
             room_count=len(rooms),
+            room_status_counts=room_status_counts,
             **context,
         )
 

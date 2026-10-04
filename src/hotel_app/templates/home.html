@@ -14,6 +14,10 @@
       <div>
         <h2 id="home-room-list-title">Danh sách phòng</h2>
         <p>{{ room_count }} phòng</p>
+        <div class="status-summary" aria-label="Thống kê số lượng phòng theo trạng thái">
+          <span class="status-summary__item"><span class="legend-dot legend-dot--empty"></span>Phòng trống: {{ room_status_counts.get('Phòng trống', 0) }}</span>
+          <span class="status-summary__item"><span class="legend-dot legend-dot--occupied"></span>Đang thuê: {{ room_status_counts.get('Đang thuê', 0) }}</span>
+        </div>
       </div>
     </header>
 

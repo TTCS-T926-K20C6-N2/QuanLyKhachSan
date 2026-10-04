@@ -139,6 +139,8 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .panel-header h2 { margin: 0; color: #142b43; font-size: 1.18rem; }
 .panel-header p { margin: 5px 0 0; color: var(--muted); font-size: 0.88rem; }
 .panel-header__actions { display: flex; min-width: 0; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.status-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.status-summary__item { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-soft); color: #536579; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
 .action-button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 5px; padding: 6px 11px; border: 1px solid #c8d6e3; border-radius: 7px; background: #ffffff; color: #244a6b; font-size: 0.8rem; font-weight: 750; line-height: 1.2; text-decoration: none; white-space: nowrap; }
 .action-button:hover,
 .action-button:focus-visible { border-color: #78acd0; background: #f0f8fd; }
