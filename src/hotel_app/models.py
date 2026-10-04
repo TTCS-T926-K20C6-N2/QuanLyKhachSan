@@ -74,6 +74,23 @@ class Room(db.Model):
     is_demo = db.Column(db.Boolean, nullable=False, default=False)
 
 
+class RoomRental(db.Model):
+    """A persisted rental transaction with its price and duration snapshot."""
+
+    __tablename__ = "room_rentals"
+
+    id = db.Column(db.Integer, primary_key=True)
+    room_id = db.Column(
+        db.Integer, db.ForeignKey("rooms.id", ondelete="SET NULL"), nullable=True
+    )
+    room_number = db.Column(db.String(20), nullable=False)
+    rented_at = db.Column(db.DateTime, nullable=False)
+    expected_checkout = db.Column(db.DateTime, nullable=False)
+    duration_minutes = db.Column(db.Integer, nullable=False)
+    nightly_rate = db.Column(db.Integer, nullable=False)
+    total_price = db.Column(db.Integer, nullable=False)
+
+
 class RoomSeedState(db.Model):
     """Records one-time room seeding so deleted demos do not return."""
 
@@ -90,4 +107,3 @@ class LegacyRoomSessionMigration(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     completed = db.Column(db.Boolean, nullable=False, default=False)
-

@@ -82,6 +82,21 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-dialog__close:focus-visible { border-color: #78acd0; background: #f0f8fd; outline: 2px solid #7bc1ef; outline-offset: 2px; }
 .room-dialog .room-form { padding: 20px 24px 22px; }
 .room-dialog__alert { margin: 16px 24px 0; }
+.rent-dialog { width: min(860px, calc(100vw - 32px)); }
+.rent-room-summary { display: grid; grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.4fr); gap: 12px 20px; }
+.rent-room-summary h3 { grid-column: 1 / -1; margin: 0; color: #142b43; font-size: 1rem; }
+.rent-room-summary > img { width: 100%; height: 100%; min-height: 150px; max-height: 210px; border-radius: 8px; background: var(--surface-soft); object-fit: cover; }
+.rent-room-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 10px 18px; margin: 0; }
+.rent-room-details > div { min-width: 0; }
+.rent-room-details dt,
+.rent-total span { color: var(--muted); font-size: 0.8rem; }
+.rent-room-details dd { margin: 2px 0 0; color: #17324c; font-size: 0.9rem; font-weight: 750; overflow-wrap: anywhere; }
+.rent-room-details__wide { grid-column: 1 / -1; }
+.rent-time-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 22px; margin-top: 22px; }
+.rent-total { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; padding: 14px 16px; border: 1px solid #c7deef; border-radius: 9px; background: #f4faff; }
+.rent-total > div { display: grid; gap: 3px; }
+.rent-total strong { color: var(--blue-800); font-size: 1.02rem; }
+.rent-total small { grid-column: 1 / -1; color: var(--muted); font-size: 0.76rem; }
 .room-form__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 22px; }
 .form-field { display: flex; min-width: 0; flex-direction: column; gap: 7px; }
 .form-field > label,
@@ -166,10 +181,10 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-times > div { min-width: 0; }
 .room-times dt { color: #536579; font-size: 0.72rem; }
 .room-times dd { margin: 2px 0 0; color: #17324c; font-size: 0.88rem; font-weight: 750; }
-.room-actions { display: flex; gap: 7px; margin-top: 14px; padding-top: 11px; border-top: 1px solid #e8edf2; }
-.room-card__delete { display: flex; flex: 1; }
+.room-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 14px; padding-top: 11px; border-top: 1px solid #e8edf2; }
+.room-card__delete { display: flex; min-width: 0; grid-column: 1 / -1; }
 .room-card__delete .action-button { width: 100%; }
-.room-actions .action-button { flex: 1; }
+.room-actions > .action-button { min-width: 0; }
 .room-type-table-wrap { overflow-x: auto; }
 .room-type-table { width: 100%; min-width: 560px; border-collapse: collapse; }
 .room-type-table th,
@@ -218,6 +233,9 @@ a:focus-visible,
 .room-type-edit-footer { align-items: stretch; flex-direction: column; margin-right: 16px; margin-left: 16px; }
 .room-type-edit-footer__buttons { justify-content: flex-end; }
 .room-form__grid { grid-template-columns: 1fr; }
+.rent-room-summary { grid-template-columns: 1fr; }
+.rent-room-summary > img { max-height: 220px; }
+.rent-time-fields { grid-template-columns: 1fr; }
 .form-field--wide { grid-column: auto; }
 .room-form { padding: 18px 16px; }
 .demo-notice { flex-direction: column; }

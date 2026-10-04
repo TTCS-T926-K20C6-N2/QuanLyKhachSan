@@ -1,0 +1,104 @@
+{% set rental_display = room_display_values.get(rent_modal_room.id) if rent_modal_room else none %}
+{% set rental_image = (url_for('room_image', filename=rent_modal_room.image) if rent_modal_room.image else url_for('static', filename='images/room-double.jpg')) if rent_modal_room else '' %}
+<dialog
+  class="room-dialog rent-dialog"
+  id="rent-room-dialog"
+  aria-labelledby="rent-dialog-title"
+  data-nightly-rate="{{ rental_display.price if rental_display else '' }}"
+  data-edit-mode="{{ 'true' if rental_edit_mode else 'false' }}"
+  {% if rent_modal_open %}data-open-on-load{% endif %}
+>
+  <header class="room-dialog__header">
+    <div>
+      <p class="page-kicker">Quản lý phòng</p>
+      <h2 id="rent-dialog-title">{{ 'Tùy chọn cho thuê' if rental_edit_mode else 'Cho thuê phòng' }}</h2>
+      <p class="room-dialog__subtitle">
+        {% if rental_edit_mode %}
+          Giờ bắt đầu giữ nguyên; tiền thuê sẽ được tính lại theo giờ trả mới.
+        {% else %}
+          Thời gian bắt đầu được lấy tự động từ giờ hệ thống.
+        {% endif %}
+      </p>
+    </div>
+    <button class="room-dialog__close" id="close-rent-dialog" type="button" aria-label="Đóng" title="Đóng">
+      <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+    </button>
+  </header>
+
+  {% if rental_error %}
+    <div class="form-alert form-alert--error room-dialog__alert" role="alert">{{ rental_error }}</div>
+  {% endif %}
+
+  <form
+    class="room-form rent-form"
+    id="rent-room-form"
+    method="post"
+    action="{{ url_for('edit_room_rental' if rental_edit_mode else 'rent_room', room_number=rent_modal_room.number) if rent_modal_room else '#' }}"
+    data-nightly-rate="{{ rental_display.price if rental_display else '' }}"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <section class="rent-room-summary" aria-labelledby="rent-room-summary-title">
+      <h3 id="rent-room-summary-title">Thông tin phòng</h3>
+      <img
+        id="rent-room-image"
+        src="{{ rental_image }}"
+        alt="{{ ('Ảnh phòng ' ~ rent_modal_room.number) if rent_modal_room else 'Ảnh phòng được chọn' }}"
+      >
+      <dl class="rent-room-details">
+        <div><dt>Mã phòng</dt><dd id="rent-room-number">{{ rent_modal_room.number if rent_modal_room else '' }}</dd></div>
+        <div><dt>Tầng</dt><dd id="rent-room-floor">{{ rent_modal_room.floor if rent_modal_room else '' }}</dd></div>
+        <div><dt>Thể loại</dt><dd id="rent-room-type">{{ rent_modal_room.type if rent_modal_room else '' }}</dd></div>
+        <div><dt>Trạng thái</dt><dd id="rent-room-status">{{ rent_modal_room.status if rent_modal_room else '' }}</dd></div>
+        <div class="rent-room-details__wide"><dt>Mô tả</dt><dd id="rent-room-description">{{ rental_display.description if rental_display else '' }}</dd></div>
+        <div><dt>Giá thuê</dt><dd id="rent-room-price">{% if rental_display %}{{ "{:,.0f}".format(rental_display.price) }} VNĐ / đêm{% endif %}</dd></div>
+        <div><dt>Giờ vào hiện tại</dt><dd id="rent-room-check-in">{{ rent_modal_room.check_in or '—' if rent_modal_room else '—' }}</dd></div>
+        <div><dt>Giờ ra hiện tại</dt><dd id="rent-room-check-out">{{ rent_modal_room.check_out or '—' if rent_modal_room else '—' }}</dd></div>
+      </dl>
+    </section>
+
+    <div class="rent-time-fields">
+      <div class="form-field">
+        <label for="rental-start">Thời gian bắt đầu thuê</label>
+        <input
+          id="rental-start"
+          type="datetime-local"
+          value="{{ rental_started_at.strftime('%Y-%m-%dT%H:%M') if rental_started_at else '' }}"
+          readonly
+          aria-describedby="rental-start-help"
+        >
+        <small class="field-hint" id="rental-start-help">
+          {% if rental_edit_mode %}
+            Đây là thời điểm bắt đầu đã lưu; không thể thay đổi khi chỉnh giờ trả.
+          {% else %}
+            Thời gian lưu sẽ được máy chủ xác nhận khi bạn chọn lưu.
+          {% endif %}
+        </small>
+      </div>
+      <div class="form-field">
+        <label for="expected-checkout">Thời gian trả phòng</label>
+        <input
+          id="expected-checkout"
+          name="expected_checkout"
+          type="datetime-local"
+          value="{{ rental_checkout_value }}"
+          min="{{ rental_min_checkout.strftime('%Y-%m-%dT%H:%M') if rental_min_checkout else (rental_started_at.strftime('%Y-%m-%dT%H:%M') if rental_started_at else '') }}"
+          required
+          aria-describedby="expected-checkout-error"
+        >
+        {% if rental_error %}<small class="field-error" id="expected-checkout-error">{{ rental_error }}</small>{% endif %}
+      </div>
+    </div>
+
+    <section class="rent-total" aria-live="polite">
+      <div><span>Thời gian thuê</span><strong id="rental-duration">—</strong></div>
+      <div><span>Tổng tiền dự kiến</span><strong id="rental-total">—</strong></div>
+      <small>Tiền thuê = giá theo đêm × số phút thuê / 1.440; làm tròn đến đồng.</small>
+    </section>
+
+    <footer class="room-form__footer">
+      <button class="action-button" id="cancel-rent-dialog" type="button">Hủy</button>
+      <button class="action-button action-button--primary" type="submit">{{ 'Lưu giờ trả mới' if rental_edit_mode else 'Lưu thuê phòng' }}</button>
+    </footer>
+  </form>
+</dialog>

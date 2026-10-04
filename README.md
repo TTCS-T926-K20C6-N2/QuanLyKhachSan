@@ -47,6 +47,21 @@ DEMO_USER_PASSWORD=Demo1@Hotel2026
 
 Không cần chạy `python app.py`.
 
+## Cho thuê phòng
+
+1. Đăng nhập và mở **Danh sách phòng**.
+2. Chọn **Cho thuê** trên thẻ của một phòng trống.
+3. Chọn thời gian trả phòng; thời gian bắt đầu được lấy từ máy chủ.
+4. Xem thời lượng và tổng tiền dự kiến rồi chọn **Lưu thuê phòng**.
+
+Giá được tính theo tỷ lệ thời gian thực tế: `giá/đêm × số phút thuê / 1.440`,
+làm tròn đến đồng. Khi lưu thành công, lượt thuê được ghi vào SQLite và phòng
+chuyển sang trạng thái **Đang thuê**.
+
+Khi cần đổi lịch, chọn **Tùy chọn cho thuê** trên phòng đang thuê. Giờ bắt đầu
+được giữ nguyên; giờ trả mới phải sau thời điểm hiện tại và tổng tiền sẽ được
+tính lại trước khi lưu.
+
 ## Demo account
 
 - Email: `demo@example.test`

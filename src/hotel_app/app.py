@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 from datetime import date, datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from .extensions import csrf, db
 from .models import (
     LegacyRoomSessionMigration,
     Room,
+    RoomRental,
     RoomSeedState,
     RoomType,
     RoomTypeSeedState,
@@ -212,6 +214,11 @@ def _valid_room_time(value: str) -> bool:
     except ValueError:
         return False
     return parsed_time.strftime("%H:%M") == value
+
+
+def _rental_amount(price_per_night: int, duration_minutes: int) -> int:
+    amount = Decimal(price_per_night) * Decimal(duration_minutes) / Decimal(1440)
+    return int(amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def _seed_demo_user(app: Flask) -> None:
@@ -575,6 +582,16 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             room.id: _room_display_values(room)
             for room in rooms
         }
+        room_ids = [room.id for room in rooms]
+        active_room_rentals = {}
+        if room_ids:
+            rentals = db.session.execute(
+                db.select(RoomRental)
+                .where(RoomRental.room_id.in_(room_ids))
+                .order_by(RoomRental.rented_at.desc(), RoomRental.id.desc())
+            ).scalars()
+            for rental in rentals:
+                active_room_rentals.setdefault(rental.room_id, rental)
         context = {
             "errors": {},
             "room_number": "",
@@ -585,6 +602,13 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             "modal_form": True,
             "room_modal_open": False,
             "service_error": None,
+            "rent_modal_room": None,
+            "rent_modal_open": False,
+            "rental_started_at": None,
+            "rental_checkout_value": "",
+            "rental_error": None,
+            "rental_edit_mode": False,
+            "rental_min_checkout": None,
         }
         context.update(form_context)
         return render_template(
@@ -592,6 +616,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             user=user,
             rooms=rooms,
             room_display_values=room_display_values,
+            active_room_rentals=active_room_rentals,
             room_count=len(rooms),
             **context,
         )
@@ -602,6 +627,207 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if user is None:
             return redirect(url_for("login"))
         return render_room_management(user)
+
+    @app.route("/rooms/<room_number>/rent", methods=["GET", "POST"])
+    def rent_room(room_number: str):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        normalized_number = str(room_number).strip()
+        room = db.session.execute(
+            db.select(Room).where(Room.number == normalized_number)
+        ).scalar_one_or_none()
+        if room is None:
+            flash(f"Không tìm thấy phòng {normalized_number}.", "error")
+            return redirect(url_for("room_management"))
+
+        started_at = datetime.now().replace(second=0, microsecond=0)
+        if request.method == "GET":
+            if room.status != "Phòng trống" or room.state != "empty":
+                flash(f"Phòng {room.number} hiện không còn trống.", "error")
+                return redirect(url_for("room_management"))
+            return render_room_management(
+                user,
+                rent_modal_room=room,
+                rent_modal_open=True,
+                rental_started_at=started_at,
+            )
+
+        rental_error = None
+        checkout_value = request.form.get("expected_checkout", "").strip()
+        price_per_night = _room_display_values(room)["price"]
+        try:
+            expected_checkout = datetime.strptime(
+                checkout_value, "%Y-%m-%dT%H:%M"
+            )
+            if expected_checkout.strftime("%Y-%m-%dT%H:%M") != checkout_value:
+                raise ValueError
+        except ValueError:
+            expected_checkout = None
+            rental_error = "Vui lòng chọn thời gian trả phòng hợp lệ."
+
+        if room.status != "Phòng trống" or room.state != "empty":
+            rental_error = f"Phòng {room.number} hiện không còn trống."
+        elif price_per_night <= 0:
+            rental_error = "Phòng chưa có giá thuê hợp lệ, không thể cho thuê."
+        elif expected_checkout is not None and expected_checkout <= started_at:
+            rental_error = "Thời gian trả phòng phải sau thời gian bắt đầu thuê."
+
+        if rental_error is None and expected_checkout is not None:
+            duration_minutes = int(
+                (expected_checkout - started_at).total_seconds() // 60
+            )
+            total_price = _rental_amount(price_per_night, duration_minutes)
+            try:
+                db.session.add(
+                    RoomRental(
+                        room_id=room.id,
+                        room_number=room.number,
+                        rented_at=started_at,
+                        expected_checkout=expected_checkout,
+                        duration_minutes=duration_minutes,
+                        nightly_rate=price_per_night,
+                        total_price=total_price,
+                    )
+                )
+                room.status = "Đang thuê"
+                room.state = "occupied"
+                room.check_in = started_at.strftime("%H:%M")
+                room.check_out = expected_checkout.strftime("%H:%M")
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+                app.logger.exception("A room rental could not be saved.")
+                return render_room_management(
+                    user,
+                    rent_modal_room=room,
+                    rent_modal_open=True,
+                    rental_started_at=started_at,
+                    rental_checkout_value=checkout_value,
+                    rental_error="Không thể lưu lượt thuê phòng. Vui lòng thử lại.",
+                ), 503
+
+            flash(
+                f"Đã cho thuê phòng {room.number}. "
+                f"Tổng tiền: {total_price:,.0f} VNĐ.",
+                "success",
+            )
+            return redirect(url_for("room_management"))
+
+        return render_room_management(
+            user,
+            rent_modal_room=room,
+            rent_modal_open=True,
+            rental_started_at=started_at,
+            rental_checkout_value=checkout_value,
+            rental_error=rental_error,
+        ), 400
+
+    @app.route("/rooms/<room_number>/rent/edit", methods=["GET", "POST"])
+    def edit_room_rental(room_number: str):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+
+        normalized_number = str(room_number).strip()
+        room = db.session.execute(
+            db.select(Room).where(Room.number == normalized_number)
+        ).scalar_one_or_none()
+        if room is None:
+            flash(f"Không tìm thấy phòng {normalized_number}.", "error")
+            return redirect(url_for("room_management"))
+
+        rental = db.session.execute(
+            db.select(RoomRental)
+            .where(
+                RoomRental.room_id == room.id,
+                RoomRental.room_number == room.number,
+            )
+            .order_by(RoomRental.rented_at.desc(), RoomRental.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if rental is None:
+            flash(
+                f"Không tìm thấy lượt thuê để điều chỉnh cho phòng {room.number}.",
+                "error",
+            )
+            return redirect(url_for("room_management"))
+
+        now = datetime.now().replace(second=0, microsecond=0)
+        min_checkout = max(now, rental.rented_at)
+        checkout_value = request.form.get(
+            "expected_checkout",
+            rental.expected_checkout.strftime("%Y-%m-%dT%H:%M"),
+        ).strip()
+        rental_error = None
+
+        if request.method == "POST":
+            try:
+                expected_checkout = datetime.strptime(
+                    checkout_value, "%Y-%m-%dT%H:%M"
+                )
+                if expected_checkout.strftime("%Y-%m-%dT%H:%M") != checkout_value:
+                    raise ValueError
+            except ValueError:
+                expected_checkout = None
+                rental_error = "Vui lòng chọn thời gian trả phòng hợp lệ."
+
+            if room.status != "Đang thuê" or room.state != "occupied":
+                rental_error = f"Phòng {room.number} hiện không còn được thuê."
+            elif (
+                expected_checkout is not None
+                and expected_checkout <= min_checkout
+            ):
+                rental_error = "Thời gian trả phòng phải sau thời điểm hiện tại."
+
+            if rental_error is None and expected_checkout is not None:
+                duration_minutes = int(
+                    (expected_checkout - rental.rented_at).total_seconds() // 60
+                )
+                total_price = _rental_amount(
+                    rental.nightly_rate, duration_minutes
+                )
+                try:
+                    rental.expected_checkout = expected_checkout
+                    rental.duration_minutes = duration_minutes
+                    rental.total_price = total_price
+                    room.check_out = expected_checkout.strftime("%H:%M")
+                    db.session.commit()
+                except SQLAlchemyError:
+                    db.session.rollback()
+                    app.logger.exception("A room rental update failed.")
+                    rental_error = (
+                        "Không thể cập nhật thời gian trả phòng. Vui lòng thử lại."
+                    )
+                    return render_room_management(
+                        user,
+                        rent_modal_room=room,
+                        rent_modal_open=True,
+                        rental_started_at=rental.rented_at,
+                        rental_checkout_value=checkout_value,
+                        rental_error=rental_error,
+                        rental_edit_mode=True,
+                        rental_min_checkout=min_checkout,
+                    ), 503
+
+                flash(
+                    f"Đã cập nhật giờ trả phòng {room.number}. "
+                    f"Tổng tiền mới: {total_price:,.0f} VNĐ.",
+                    "success",
+                )
+                return redirect(url_for("room_management"))
+
+        return render_room_management(
+            user,
+            rent_modal_room=room,
+            rent_modal_open=True,
+            rental_started_at=rental.rented_at,
+            rental_checkout_value=checkout_value,
+            rental_error=rental_error,
+            rental_edit_mode=True,
+            rental_min_checkout=min_checkout,
+        ), 400 if request.method == "POST" else 200
 
     @app.route("/rooms/new", methods=["GET", "POST"])
     def create_room():

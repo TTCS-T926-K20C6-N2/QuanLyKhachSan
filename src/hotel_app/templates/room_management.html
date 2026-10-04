@@ -61,6 +61,31 @@
               </div>
             </dl>
             <div class="room-actions">
+              {% if room.status == 'Phòng trống' and room.state == 'empty' %}
+                <a
+                  class="action-button action-button--primary"
+                  href="{{ url_for('rent_room', room_number=room.number) }}"
+                  data-rent-trigger
+                  data-room-number="{{ room.number }}"
+                  data-room-floor='{{ room.floor|tojson }}'
+                  data-room-type="{{ room.type }}"
+                  data-room-description="{{ display_values.description }}"
+                  data-room-price="{{ display_values.price }}"
+                  data-room-status="{{ room.status }}"
+                  data-room-image="{{ room_image_url }}"
+                  data-room-check-in="{{ room.check_in or '' }}"
+                  data-room-check-out="{{ room.check_out or '' }}"
+                >
+                  Cho thuê
+                </a>
+              {% elif room.status == 'Đang thuê' and room.state == 'occupied' and room.id in active_room_rentals %}
+                <a
+                  class="action-button action-button--edit room-actions__rental"
+                  href="{{ url_for('edit_room_rental', room_number=room.number) }}"
+                >
+                  Tùy chọn cho thuê
+                </a>
+              {% endif %}
               <a class="action-button action-button--edit" href="{{ url_for('edit_room', room_number=room.number) }}">
                 Cập nhật
               </a>
@@ -97,6 +122,8 @@
     {% include "room_form_fields.html" %}
   </dialog>
 
+  {% include "room_rent_dialog.html" %}
+
   <script>
     const roomDialog = document.getElementById("room-dialog");
     document.getElementById("open-room-dialog").addEventListener("click", (event) => {
@@ -111,6 +138,74 @@
     });
     if (roomDialog.hasAttribute("data-open-on-load")) {
       roomDialog.showModal();
+    }
+
+    const rentDialog = document.getElementById("rent-room-dialog");
+    const rentForm = document.getElementById("rent-room-form");
+    const rentalStart = document.getElementById("rental-start");
+    const checkoutInput = document.getElementById("expected-checkout");
+    const durationOutput = document.getElementById("rental-duration");
+    const totalOutput = document.getElementById("rental-total");
+    const localDateTimeValue = (date) => {
+      const pad = (value) => String(value).padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    };
+    const refreshRentalEstimate = () => {
+      const start = new Date(rentalStart.value);
+      const checkout = new Date(checkoutInput.value);
+      const minutes = Math.floor((checkout - start) / 60000);
+      const nightlyRate = Number(rentForm.dataset.nightlyRate);
+      if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isFinite(nightlyRate)) {
+        durationOutput.textContent = "—";
+        totalOutput.textContent = "—";
+        return;
+      }
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+      durationOutput.textContent = `${hours} giờ ${remainingMinutes} phút`;
+      totalOutput.textContent = `${new Intl.NumberFormat("vi-VN").format(Math.round(nightlyRate * minutes / 1440))} VNĐ`;
+    };
+    const openRentDialog = (trigger) => {
+      rentForm.action = trigger.href;
+      rentForm.dataset.nightlyRate = trigger.dataset.roomPrice;
+      document.getElementById("rent-room-number").textContent = trigger.dataset.roomNumber;
+      document.getElementById("rent-room-floor").textContent = JSON.parse(trigger.dataset.roomFloor);
+      document.getElementById("rent-room-type").textContent = trigger.dataset.roomType;
+      document.getElementById("rent-room-description").textContent = trigger.dataset.roomDescription || "—";
+      document.getElementById("rent-room-price").textContent = `${new Intl.NumberFormat("vi-VN").format(Number(trigger.dataset.roomPrice))} VNĐ / đêm`;
+      document.getElementById("rent-room-status").textContent = trigger.dataset.roomStatus;
+      document.getElementById("rent-room-check-in").textContent = trigger.dataset.roomCheckIn || "—";
+      document.getElementById("rent-room-check-out").textContent = trigger.dataset.roomCheckOut || "—";
+      const image = document.getElementById("rent-room-image");
+      image.src = trigger.dataset.roomImage;
+      image.alt = `Ảnh phòng ${trigger.dataset.roomNumber}`;
+      rentalStart.value = localDateTimeValue(new Date());
+      checkoutInput.min = rentalStart.value;
+      checkoutInput.value = "";
+      refreshRentalEstimate();
+      rentDialog.showModal();
+    };
+    document.querySelectorAll("[data-rent-trigger]").forEach((trigger) => {
+      trigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        openRentDialog(trigger);
+      });
+    });
+    document.getElementById("close-rent-dialog").addEventListener("click", () => {
+      rentDialog.close();
+    });
+    document.getElementById("cancel-rent-dialog").addEventListener("click", () => {
+      rentDialog.close();
+    });
+    checkoutInput.addEventListener("input", refreshRentalEstimate);
+    checkoutInput.addEventListener("change", refreshRentalEstimate);
+    if (rentDialog.hasAttribute("data-open-on-load")) {
+      rentForm.dataset.nightlyRate = rentDialog.dataset.nightlyRate;
+      if (rentDialog.dataset.editMode !== "true") {
+        checkoutInput.min = rentalStart.value;
+      }
+      refreshRentalEstimate();
+      rentDialog.showModal();
     }
   </script>
 
