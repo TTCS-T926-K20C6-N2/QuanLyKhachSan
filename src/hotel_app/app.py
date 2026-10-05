@@ -12,10 +12,15 @@ from typing import Any
 
 from flask import Flask, flash, redirect, render_template, request, send_from_directory, session, url_for
 from flask_wtf.csrf import CSRFError
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.utils import secure_filename
 
+from .auth_recovery import (
+    generate_password_reset_token,
+    send_password_reset_email,
+    validate_password_reset_token,
+)
 from .extensions import csrf, db
 from .models import (
     LegacyRoomSessionMigration,
@@ -35,6 +40,11 @@ INVALID_CREDENTIAL_MESSAGE = "Email hoặc mật khẩu không đúng"
 REGISTER_SUCCESS_MESSAGE = "Tạo tài khoản thành công. Vui lòng đăng nhập."
 DEVELOPMENT_DEMO_EMAIL = "demo@example.test"
 DEVELOPMENT_DEMO_PASSWORD = "Demo1@Hotel2026"
+FORGOT_PASSWORD_MESSAGE = (
+    "Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu sẽ được gửi."
+)
+RESET_PASSWORD_SUCCESS_MESSAGE = "Mật khẩu đã được đặt lại. Vui lòng đăng nhập."
+INVALID_RESET_TOKEN_MESSAGE = "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn."
 TRUE_VALUES = {"1", "true", "yes", "on"}
 ALLOWED_ROOM_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 PROFILE_IMAGE_SIGNATURES = {
@@ -204,6 +214,16 @@ def _environment_flag(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().casefold() in TRUE_VALUES
+
+
+def _environment_integer(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
 
 
 def _valid_room_time(value: str) -> bool:
@@ -454,6 +474,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         DEMO_USER_PASSWORD=(
             os.environ.get("DEMO_USER_PASSWORD") or DEVELOPMENT_DEMO_PASSWORD
         ),
+        MAIL_SERVER=os.environ.get("MAIL_SERVER", "smtp.gmail.com"),
+        MAIL_PORT=_environment_integer("MAIL_PORT", 587),
+        MAIL_USE_TLS=_environment_flag("MAIL_USE_TLS", True),
+        MAIL_USERNAME=os.environ.get("MAIL_USERNAME", ""),
+        MAIL_PASSWORD=os.environ.get("MAIL_PASSWORD", ""),
+        MAIL_FROM=os.environ.get("MAIL_FROM", ""),
+        APP_BASE_URL=os.environ.get(
+            "APP_BASE_URL", "http://127.0.0.1:5000"
+        ),
     )
     if test_config:
         app.config.update(test_config)
@@ -530,6 +559,161 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             email=email_input,
             errors=errors,
             credential_error=credential_error,
+            service_error=None,
+        )
+
+    @app.route("/forgot-password", methods=["GET", "POST"])
+    def forgot_password():
+        email_input = request.form.get("email", "")
+        errors: dict[str, str] = {}
+
+        if request.method == "POST":
+            canonical_email = normalize_email(email_input)
+            if not canonical_email:
+                errors["email"] = "Vui lòng nhập Email."
+            else:
+                try:
+                    user = db.session.execute(
+                        db.select(User).where(User.email == canonical_email)
+                    ).scalar_one_or_none()
+                    if user is not None:
+                        result = db.session.execute(
+                            update(User)
+                            .where(User.id == user.id)
+                            .values(
+                                password_reset_version=(
+                                    User.password_reset_version + 1
+                                )
+                            ),
+                            execution_options={"synchronize_session": False},
+                        )
+                        if result.rowcount != 1:
+                            db.session.rollback()
+                            flash(FORGOT_PASSWORD_MESSAGE, "success")
+                            return redirect(
+                                url_for("forgot_password"), code=303
+                            )
+                        db.session.refresh(user, ["password_reset_version"])
+                        db.session.commit()
+                        token = generate_password_reset_token(
+                            user, app.config["SECRET_KEY"]
+                        )
+                        send_password_reset_email(
+                            recipient=user.email,
+                            token=token,
+                            config=app.config,
+                        )
+                except SQLAlchemyError:
+                    db.session.rollback()
+                    app.logger.error(
+                        "Password reset request could not be processed."
+                    )
+                except (TypeError, ValueError):
+                    app.logger.error(
+                        "Password reset token or email configuration is invalid."
+                    )
+
+                flash(FORGOT_PASSWORD_MESSAGE, "success")
+                return redirect(url_for("forgot_password"), code=303)
+
+        return render_template(
+            "forgot_password.html", email=email_input, errors=errors
+        )
+
+    @app.route("/reset-password/<token>", methods=["GET", "POST"])
+    def reset_password(token: str):
+        user = validate_password_reset_token(
+            token,
+            app.config["SECRET_KEY"],
+            lambda user_id: db.session.get(User, user_id),
+        )
+        if user is None:
+            return (
+                render_template(
+                    "reset_password.html",
+                    token_valid=False,
+                    errors={},
+                    service_error=INVALID_RESET_TOKEN_MESSAGE,
+                ),
+                400,
+            )
+
+        errors: dict[str, str] = {}
+        if request.method == "POST":
+            new_password = request.form.get("new_password", "")
+            confirm_password = request.form.get("confirm_password", "")
+            if not new_password:
+                errors["new_password"] = "Vui lòng nhập mật khẩu mới."
+            elif len(new_password) < 8:
+                errors["new_password"] = "Mật khẩu phải có ít nhất 8 ký tự."
+            if not confirm_password:
+                errors["confirm_password"] = "Vui lòng xác nhận mật khẩu mới."
+            elif new_password and confirm_password != new_password:
+                errors["confirm_password"] = "Mật khẩu xác nhận không khớp."
+
+            if errors:
+                return render_template(
+                    "reset_password.html",
+                    token_valid=True,
+                    token=token,
+                    errors=errors,
+                    service_error=None,
+                )
+
+            expected_version = user.password_reset_version
+            try:
+                user.set_password(new_password)
+                new_password_hash = user.password_hash
+                db.session.expire(user, ["password_hash"])
+                result = db.session.execute(
+                    update(User)
+                    .where(
+                        User.id == user.id,
+                        User.password_reset_version == expected_version,
+                    )
+                    .values(
+                        password_hash=new_password_hash,
+                        password_reset_version=expected_version + 1,
+                    ),
+                    execution_options={"synchronize_session": False},
+                )
+                if result.rowcount != 1:
+                    db.session.rollback()
+                    return (
+                        render_template(
+                            "reset_password.html",
+                            token_valid=False,
+                            errors={},
+                            service_error=INVALID_RESET_TOKEN_MESSAGE,
+                        ),
+                        400,
+                    )
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+                app.logger.error("Password reset database update failed.")
+                return (
+                    render_template(
+                        "reset_password.html",
+                        token_valid=True,
+                        token=token,
+                        errors={},
+                        service_error=(
+                            "Hệ thống tạm thời không thể xử lý yêu cầu. "
+                            "Vui lòng thử lại."
+                        ),
+                    ),
+                    503,
+                )
+
+            flash(RESET_PASSWORD_SUCCESS_MESSAGE, "success")
+            return redirect(url_for("login"), code=303)
+
+        return render_template(
+            "reset_password.html",
+            token_valid=True,
+            token=token,
+            errors=errors,
             service_error=None,
         )
 
@@ -1892,6 +2076,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             "birth_date": "DATE",
             "phone": "VARCHAR(30) NOT NULL DEFAULT ''",
             "avatar": "VARCHAR(255)",
+            "password_reset_version": "INTEGER NOT NULL DEFAULT 0",
         }
         with db.engine.begin() as connection:
             for column_name, column_definition in profile_columns.items():

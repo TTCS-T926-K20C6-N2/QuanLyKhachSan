@@ -214,7 +214,7 @@ def test_room_list_opens_add_form_as_modal(client):
     panel_header = html.split('<header class="panel-header">', 1)[1].split(
         "</header>", 1
     )[0]
-    assert panel_header.index('class="room-legend"') < panel_header.index(
+    assert panel_header.index('class="status-summary"') < panel_header.index(
         'id="open-room-dialog"'
     )
     assert panel_header.count('id="open-room-dialog"') == 1

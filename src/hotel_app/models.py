@@ -19,6 +19,9 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(254), nullable=False, unique=True)
     password_hash = db.Column(db.String(255), nullable=False)
+    password_reset_version = db.Column(
+        db.Integer, nullable=False, default=0, server_default="0"
+    )
     full_name = db.Column(db.String(120), nullable=False, default="")
     birth_date = db.Column(db.Date, nullable=True)
     phone = db.Column(db.String(30), nullable=False, default="")

@@ -2,32 +2,52 @@
 
 Login slice cho SCRUM-21 / PB-01, dùng Flask, SQLAlchemy, SQLite, Jinja và Flask Session.
 
-## Prerequisites(Chuẩn bị trước)
+## Thiết lập lần đầu trên máy mới
 
-- Python 3.x
-- VS Code
-- VS Code Python extension và Python Debugger extension
-
-## First setup(Bước cài đặt đầu)
-
-Trong PowerShell tại project root:
+Cài Python 3.x, VS Code, VS Code Python extension và Python Debugger
+extension. Mở PowerShell và chạy:
 
 ```powershell
+git clone https://github.com/TTCS-T926-K20C6-N2/QuanLyKhachSan.git
+cd QuanLyKhachSan
+
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-```
-
-F5 tự tạo `instance/hotel.db`, schema và Demo User trong Development;
-không cần sửa SQLite hoặc chạy lệnh seed riêng.
-
-Nếu cần tùy chỉnh hoặc tắt Demo seed, tạo `.env` từ file mẫu:
-
-```powershell
 Copy-Item .env.example .env
 ```
 
-Các biến Development tùy chọn:
+`.env` là cấu hình riêng trên máy và không được commit lên Git.
+`.env.example` là file mẫu an toàn được chia sẻ qua Git; không ghi thông tin
+đăng nhập thật vào đó. Các tính năng thông thường vẫn chạy khi chưa cấu hình
+Gmail. Chỉ gửi email Forgot Password thật mới cần cấu hình tài khoản gửi Gmail.
+
+Ví dụ cấu hình an toàn trong `.env`:
+
+```text
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=
+MAIL_PASSWORD=
+MAIL_FROM=
+APP_BASE_URL=http://127.0.0.1:5000
+```
+
+`MAIL_USERNAME` là tài khoản Gmail mà project dùng để gửi email.
+`MAIL_PASSWORD` là Google App Password của tài khoản gửi, không phải mật khẩu
+Gmail thông thường. `MAIL_FROM` thường là cùng địa chỉ Gmail gửi đó.
+
+**Bảo mật thông tin gửi mail:**
+
+- Không commit `.env` hoặc Gmail App Password.
+- Không ghi credential thật vào `.env.example`.
+- Không gửi App Password qua GitHub.
+- Nếu nhóm dùng chung một Gmail sender, chỉ chia sẻ App Password riêng tư với
+  thành viên cần kiểm tra gửi email thật.
+- Thành viên chỉ làm Rooms, UI hoặc phần khác không cần Gmail credentials.
+
+Cấu hình Development tùy chọn khác có thể được chỉnh trong `.env`:
 
 ```text
 APP_ENV=development
@@ -38,7 +58,14 @@ DEMO_USER_PASSWORD=Demo1@Hotel2026
 
 `.env` và SQLite runtime database đã được loại khỏi Git.
 
-## Daily run
+F5 tự tạo `instance/hotel.db`, schema và Demo User trong Development; không cần
+sửa SQLite hoặc chạy lệnh seed riêng.
+
+Sau lần setup đầu tiên, không cần cài lại package hoặc tạo lại `.env` mỗi lần.
+Thông thường chỉ cần mở project (và activate `.venv` nếu dùng terminal mới),
+rồi nhấn F5.
+
+### Khởi động hằng ngày
 
 1. Mở project root trong VS Code.
 2. Chọn interpreter `.venv` bằng **Python: Select Interpreter**.
