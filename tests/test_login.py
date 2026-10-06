@@ -6,6 +6,8 @@ import re
 from datetime import date
 from io import BytesIO
 
+import pytest
+
 from hotel_app.app import (
     DEVELOPMENT_DEMO_EMAIL,
     DEVELOPMENT_DEMO_PASSWORD,
@@ -338,6 +340,69 @@ def test_profile_rejects_invalid_required_fields_and_avatar(client, app):
         assert user.phone == ""
         assert user.email == normalize_email(DEMO_EMAIL)
         assert user.avatar is None
+
+
+@pytest.mark.parametrize(
+    "phone",
+    [
+        "0369123456",
+        "0551234567",
+        "0791234567",
+        "0821234567",
+        "0891234567",
+        "+84 912 345 678",
+    ],
+)
+def test_profile_accepts_vietnamese_phone_number_prefixes(client, app, phone):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+    profile_page = client.get("/account").get_data(as_text=True)
+    csrf_token = re.search(
+        r'name="csrf_token"[^>]*value="([^"]+)"', profile_page
+    ).group(1)
+
+    response = client.post(
+        "/account",
+        data={
+            "csrf_token": csrf_token,
+            "full_name": "Nguyen An",
+            "birth_date": "1990-04-12",
+            "phone": phone,
+        },
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        user = db.session.execute(
+            db.select(User).where(User.email == normalize_email(DEMO_EMAIL))
+        ).scalar_one()
+        assert user.phone == phone
+
+
+@pytest.mark.parametrize("phone", ["123456789", "+9912345678", "+8412345678"])
+def test_profile_rejects_non_vietnamese_phone_number_prefixes(client, app, phone):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+    profile_page = client.get("/account").get_data(as_text=True)
+    csrf_token = re.search(
+        r'name="csrf_token"[^>]*value="([^"]+)"', profile_page
+    ).group(1)
+
+    response = client.post(
+        "/account",
+        data={
+            "csrf_token": csrf_token,
+            "full_name": "Nguyen An",
+            "birth_date": "1990-04-12",
+            "phone": phone,
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Số điện thoại không hợp lệ." in response.get_data(as_text=True)
+    with app.app_context():
+        user = db.session.execute(
+            db.select(User).where(User.email == normalize_email(DEMO_EMAIL))
+        ).scalar_one()
+        assert user.phone == ""
 
 
 def test_database_contains_scrypt_hash_not_plaintext(app):

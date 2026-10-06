@@ -1543,7 +1543,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             digits_only = re.sub(r"\D", "", phone)
             if not phone:
                 errors["phone"] = "Vui lòng nhập số điện thoại."
-            elif not re.fullmatch(r"\+?[0-9][0-9\s().-]*", phone) or not 9 <= len(digits_only) <= 15:
+            elif not re.fullmatch(r"(?:0(?:3|5|7|8|9)\d{8}|84\d{9})", digits_only):
                 errors["phone"] = "Số điện thoại không hợp lệ."
 
             avatar_upload = request.files.get("avatar")
