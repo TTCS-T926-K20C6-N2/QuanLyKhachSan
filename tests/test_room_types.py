@@ -224,6 +224,54 @@ def test_room_list_opens_add_form_as_modal(client):
     assert 'href="/rooms/new"' in html
 
 
+def test_room_list_filters_by_status_and_can_show_all(client, app):
+    assert _login(client).status_code == 302
+    _add_test_room(
+        app,
+        "501",
+        "Phòng đơn",
+        status="Đang thuê",
+        state="occupied",
+        check_in="14:00",
+        check_out="12:00",
+    )
+
+    all_rooms_html = client.get("/rooms").get_data(as_text=True)
+    empty_rooms_html = client.get("/rooms?status=empty").get_data(as_text=True)
+    occupied_rooms_html = client.get("/rooms?status=occupied").get_data(as_text=True)
+
+    assert 'href="/rooms?status=all" aria-current="page"' in all_rooms_html
+    assert 'href="/rooms?status=empty"' in all_rooms_html
+    assert 'href="/rooms?status=occupied"' in all_rooms_html
+    assert 'aria-label="Phòng 501, Đang thuê"' in all_rooms_html
+    assert "13 phòng" in all_rooms_html
+
+    assert 'href="/rooms?status=empty" aria-current="page"' in empty_rooms_html
+    assert 'aria-label="Phòng 501, Đang thuê"' not in empty_rooms_html
+    assert empty_rooms_html.count('aria-label="Phòng ') == 12
+    assert "Phòng trống: 12" in empty_rooms_html
+    assert "Đang thuê: 1" in empty_rooms_html
+    assert "13 phòng" not in empty_rooms_html
+    assert "12 phòng" in empty_rooms_html
+
+    assert 'href="/rooms?status=occupied" aria-current="page"' in occupied_rooms_html
+    assert 'aria-label="Phòng 501, Đang thuê"' in occupied_rooms_html
+    assert occupied_rooms_html.count('aria-label="Phòng ') == 1
+    assert "Phòng trống: 12" in occupied_rooms_html
+    assert "Đang thuê: 1" in occupied_rooms_html
+    assert "1 phòng" in occupied_rooms_html
+    assert "Tất cả: 13" in occupied_rooms_html
+
+
+def test_room_list_unknown_status_shows_all_rooms(client):
+    assert _login(client).status_code == 302
+
+    html = client.get("/rooms?status=unknown").get_data(as_text=True)
+
+    assert 'href="/rooms?status=all" aria-current="page"' in html
+    assert html.count('aria-label="Phòng ') == 12
+
+
 def test_room_list_is_flat_complete_unique_and_sorted(client, app):
     assert _login(client).status_code == 302
     _add_test_room(app, "015", "Phòng đơn")

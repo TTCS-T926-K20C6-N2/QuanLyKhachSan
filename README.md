@@ -77,9 +77,10 @@ Không cần chạy `python app.py`.
 ## Cho thuê phòng
 
 1. Đăng nhập và mở **Danh sách phòng**.
-2. Chọn **Cho thuê** trên thẻ của một phòng trống.
-3. Chọn thời gian trả phòng; thời gian bắt đầu được lấy từ máy chủ.
-4. Xem thời lượng và tổng tiền dự kiến rồi chọn **Lưu thuê phòng**.
+2. Chọn số lượng **Phòng trống** hoặc **Đang thuê** để lọc danh sách; chọn **Tất cả** để xem lại toàn bộ phòng.
+3. Chọn **Cho thuê** trên thẻ của một phòng trống.
+4. Chọn thời gian trả phòng; thời gian bắt đầu được lấy từ máy chủ.
+5. Xem thời lượng và tổng tiền dự kiến rồi chọn **Lưu thuê phòng**.
 
 Giá được tính theo tỷ lệ thời gian thực tế: `giá/đêm × số phút thuê / 1.440`,
 làm tròn đến đồng. Khi lưu thành công, lượt thuê được ghi vào SQLite và phòng

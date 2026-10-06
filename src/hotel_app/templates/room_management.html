@@ -16,12 +16,18 @@
       <div>
         <h2 id="room-list-title">Danh sách phòng</h2>
         <p>{{ room_count }} phòng</p>
-        
       </div>
       <div class="panel-header__actions">
         <div class="status-summary" aria-label="Thống kê số lượng phòng theo trạng thái">
-          <span class="status-summary__item"><span class="legend-dot legend-dot--empty"></span>Phòng trống: {{ room_status_counts.get('Phòng trống', 0) }}</span>
-          <span class="status-summary__item"><span class="legend-dot legend-dot--occupied"></span>Đang thuê: {{ room_status_counts.get('Đang thuê', 0) }}</span>
+          <a class="status-summary__item{% if room_status_filter == 'all' %} status-summary__item--active{% endif %}" href="{{ url_for('room_management', status='all') }}"{% if room_status_filter == 'all' %} aria-current="page"{% endif %}>
+            Tất cả: {{ all_room_count }}
+          </a>
+          <a class="status-summary__item{% if room_status_filter == 'empty' %} status-summary__item--active{% endif %}" href="{{ url_for('room_management', status='empty') }}"{% if room_status_filter == 'empty' %} aria-current="page"{% endif %}>
+            <span class="legend-dot legend-dot--empty"></span>Phòng trống: {{ room_status_counts.get('Phòng trống', 0) }}
+          </a>
+          <a class="status-summary__item{% if room_status_filter == 'occupied' %} status-summary__item--active{% endif %}" href="{{ url_for('room_management', status='occupied') }}"{% if room_status_filter == 'occupied' %} aria-current="page"{% endif %}>
+            <span class="legend-dot legend-dot--occupied"></span>Đang thuê: {{ room_status_counts.get('Đang thuê', 0) }}
+          </a>
         </div>
         <a class="action-button action-button--primary" id="open-room-dialog" href="{{ url_for('create_room') }}">
           <span aria-hidden="true">+</span> Thêm phòng
@@ -105,6 +111,9 @@
           </article>
         {% endfor %}
       </div>
+      {% if not rooms %}
+        <p class="room-empty-state" role="status">Không có phòng nào thuộc trạng thái đã chọn.</p>
+      {% endif %}
     </div>
   </section>
 

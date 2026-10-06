@@ -783,9 +783,24 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             room_status_counts=room_status_counts,
         )
 
-    def render_room_management(user: User | None, **form_context):
-        rooms = _rooms_for_management()
-        room_status_counts = _room_status_counts(rooms)
+    def render_room_management(
+        user: User | None,
+        room_status_filter: str = "all",
+        **form_context,
+    ):
+        all_rooms = _rooms_for_management()
+        room_status_counts = _room_status_counts(all_rooms)
+        room_count = len(all_rooms)
+        status_by_filter = {
+            "empty": "Phòng trống",
+            "occupied": "Đang thuê",
+        }
+        selected_status = status_by_filter.get(room_status_filter)
+        rooms = (
+            [room for room in all_rooms if room.status == selected_status]
+            if selected_status
+            else all_rooms
+        )
         room_display_values = {
             room.id: _room_display_values(room)
             for room in rooms
@@ -826,6 +841,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             room_display_values=room_display_values,
             active_room_rentals=active_room_rentals,
             room_count=len(rooms),
+            all_room_count=room_count,
+            room_status_filter=room_status_filter,
             room_status_counts=room_status_counts,
             **context,
         )
@@ -835,7 +852,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
-        return render_room_management(user)
+        room_status_filter = request.args.get("status", "all")
+        if room_status_filter not in {"all", "empty", "occupied"}:
+            room_status_filter = "all"
+        return render_room_management(user, room_status_filter=room_status_filter)
 
     @app.route("/rooms/<room_number>/rent", methods=["GET", "POST"])
     def rent_room(room_number: str):
