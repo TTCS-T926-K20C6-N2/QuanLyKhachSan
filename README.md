@@ -20,32 +20,38 @@ Copy-Item .env.example .env
 `.env` là cấu hình riêng trên máy và không được commit lên Git.
 `.env.example` là file mẫu an toàn được chia sẻ qua Git; không ghi thông tin
 đăng nhập thật vào đó. Các tính năng thông thường vẫn chạy khi chưa cấu hình
-Gmail. Chỉ gửi email Forgot Password thật mới cần cấu hình tài khoản gửi Gmail.
+email. Chỉ gửi mã Forgot Password thật mới cần cấu hình Brevo ở backend.
 
 Ví dụ cấu hình an toàn trong `.env`:
 
 ```text
-MAIL_SERVER=smtp.gmail.com
-MAIL_PORT=587
-MAIL_USE_TLS=true
-MAIL_USERNAME=
-MAIL_PASSWORD=
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=
 MAIL_FROM=
-APP_BASE_URL=http://127.0.0.1:5000
+MAIL_FROM_NAME=Hotel Management
 ```
 
-`MAIL_USERNAME` là tài khoản Gmail mà project dùng để gửi email.
-`MAIL_PASSWORD` là Google App Password của tài khoản gửi, không phải mật khẩu
-Gmail thông thường. `MAIL_FROM` thường là cùng địa chỉ Gmail gửi đó.
+### Gửi mã đặt lại mật khẩu qua Brevo
+
+Người dùng chỉ nhập email đã đăng ký, xác ngit restore .vscode/launch.jsonhận mã gồm 6 chữ số rồi đặt mật
+khẩu mới. Mã có hiệu lực trong 5 phút. Người dùng thông thường không cần và
+không tự cấu hình Brevo; credential chỉ do người vận hành backend cấu hình.
+
+Để kiểm tra gửi email thật, người vận hành backend cần tạo/cấu hình tài khoản
+Brevo, tạo API key và xác minh sender tại Brevo. Đặt API key vào
+`BREVO_API_KEY` trong `.env` cục bộ và đặt `MAIL_FROM` thành địa chỉ sender đã
+xác minh. `EMAIL_PROVIDER` mặc định là `brevo`; `MAIL_FROM_NAME` là tên hiển thị.
+Người dùng thông thường không cần cấu hình credential email. Người nhận có thể
+dùng bất kỳ nhà cung cấp email hợp lệ nào; việc provider chấp nhận yêu cầu không
+đảm bảo email vào Inbox.
 
 **Bảo mật thông tin gửi mail:**
 
-- Không commit `.env` hoặc Gmail App Password.
+- Không commit `.env` hoặc Brevo API key.
 - Không ghi credential thật vào `.env.example`.
-- Không gửi App Password qua GitHub.
-- Nếu nhóm dùng chung một Gmail sender, chỉ chia sẻ App Password riêng tư với
-  thành viên cần kiểm tra gửi email thật.
-- Thành viên chỉ làm Rooms, UI hoặc phần khác không cần Gmail credentials.
+- Không gửi API key qua GitHub.
+- Chỉ chia sẻ API key riêng tư với người cần vận hành/kiểm tra gửi email thật.
+- Thành viên chỉ làm Rooms, UI hoặc phần khác không cần email credentials.
 
 Cấu hình Development tùy chọn khác có thể được chỉnh trong `.env`:
 

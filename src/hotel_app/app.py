@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 import secrets
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
@@ -17,9 +17,10 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.utils import secure_filename
 
 from .auth_recovery import (
-    generate_password_reset_token,
-    send_password_reset_email,
-    validate_password_reset_token,
+    generate_otp,
+    otp_digest,
+    otp_matches,
+    send_password_reset_otp,
 )
 from .extensions import csrf, db
 from .models import (
@@ -29,6 +30,7 @@ from .models import (
     RoomSeedState,
     RoomType,
     RoomTypeSeedState,
+    PasswordResetChallenge,
     User,
     normalize_email,
 )
@@ -41,10 +43,12 @@ REGISTER_SUCCESS_MESSAGE = "Tạo tài khoản thành công. Vui lòng đăng nh
 DEVELOPMENT_DEMO_EMAIL = "demo@example.test"
 DEVELOPMENT_DEMO_PASSWORD = "Demo1@Hotel2026"
 FORGOT_PASSWORD_MESSAGE = (
-    "Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu sẽ được gửi."
+    "Nếu email tồn tại trong hệ thống, mã xác nhận sẽ được gửi."
 )
 RESET_PASSWORD_SUCCESS_MESSAGE = "Mật khẩu đã được đặt lại. Vui lòng đăng nhập."
-INVALID_RESET_TOKEN_MESSAGE = "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn."
+INVALID_RESET_CODE_MESSAGE = "Mã xác nhận không hợp lệ hoặc đã hết hạn."
+RECOVERY_SERVICE_ERROR = "Hệ thống tạm thời không thể xử lý yêu cầu. Vui lòng thử lại."
+RECOVERY_SESSION_KEY = "password_reset_challenge_id"
 TRUE_VALUES = {"1", "true", "yes", "on"}
 ALLOWED_ROOM_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 PROFILE_IMAGE_SIGNATURES = {
@@ -216,16 +220,6 @@ def _environment_flag(name: str, default: bool) -> bool:
     return value.strip().casefold() in TRUE_VALUES
 
 
-def _environment_integer(name: str, default: int) -> int:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        return default
-
-
 def _valid_room_time(value: str) -> bool:
     if not value:
         return True
@@ -239,6 +233,12 @@ def _valid_room_time(value: str) -> bool:
 def _rental_amount(price_per_night: int, duration_minutes: int) -> int:
     amount = Decimal(price_per_night) * Decimal(duration_minutes) / Decimal(1440)
     return int(amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _utc_now() -> datetime:
+    """Return naive UTC for consistent storage in SQLite DateTime columns."""
+
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _seed_demo_user(app: Flask) -> None:
@@ -474,15 +474,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         DEMO_USER_PASSWORD=(
             os.environ.get("DEMO_USER_PASSWORD") or DEVELOPMENT_DEMO_PASSWORD
         ),
-        MAIL_SERVER=os.environ.get("MAIL_SERVER", "smtp.gmail.com"),
-        MAIL_PORT=_environment_integer("MAIL_PORT", 587),
-        MAIL_USE_TLS=_environment_flag("MAIL_USE_TLS", True),
-        MAIL_USERNAME=os.environ.get("MAIL_USERNAME", ""),
-        MAIL_PASSWORD=os.environ.get("MAIL_PASSWORD", ""),
+        EMAIL_PROVIDER=os.environ.get("EMAIL_PROVIDER", "brevo"),
+        BREVO_API_KEY=os.environ.get("BREVO_API_KEY", ""),
         MAIL_FROM=os.environ.get("MAIL_FROM", ""),
-        APP_BASE_URL=os.environ.get(
-            "APP_BASE_URL", "http://127.0.0.1:5000"
-        ),
+        MAIL_FROM_NAME=os.environ.get("MAIL_FROM_NAME", "Hotel Management"),
     )
     if test_config:
         app.config.update(test_config)
@@ -562,82 +557,186 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             service_error=None,
         )
 
+    def issue_recovery_challenge(user: User) -> bool:
+        """Persist an attempt before provider I/O, then record its outcome."""
+
+        now = _utc_now()
+        cutoff = now - timedelta(minutes=15)
+        recent = db.session.execute(
+            db.select(PasswordResetChallenge).where(
+                PasswordResetChallenge.user_id == user.id,
+                PasswordResetChallenge.created_at > cutoff,
+            ).order_by(PasswordResetChallenge.created_at.desc())
+        ).scalars().all()
+        if recent and (now - recent[0].created_at).total_seconds() < 60:
+            return False
+        if len(recent) >= 5:
+            return False
+
+        # Preserve the rolling-window rows for quota accounting, then trim old data.
+        old_rows = db.session.execute(
+            db.select(PasswordResetChallenge).where(
+                PasswordResetChallenge.user_id == user.id,
+                PasswordResetChallenge.created_at < now - timedelta(days=1),
+            )
+        ).scalars().all()
+        for old_row in old_rows:
+            db.session.delete(old_row)
+
+        user.password_reset_version += 1
+        otp = generate_otp()
+        challenge = PasswordResetChallenge(
+            user_id=user.id,
+            reset_version=user.password_reset_version,
+            otp_digest="",
+            created_at=now,
+            expires_at=now + timedelta(minutes=5),
+            failed_attempts=0,
+            delivery_status="pending",
+        )
+        db.session.add(challenge)
+        db.session.flush()
+        challenge.otp_digest = otp_digest(
+            app.config["SECRET_KEY"], challenge.id, user.id,
+            challenge.reset_version, otp,
+        )
+        db.session.commit()
+        session[RECOVERY_SESSION_KEY] = challenge.id
+
+        sent = send_password_reset_otp(user.email, otp, app.config)
+        challenge.delivery_status = "sent" if sent else "failed"
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.error("Password reset delivery state could not be saved.")
+            return False
+        return sent
+
+    def clear_recovery_session() -> None:
+        session.pop(RECOVERY_SESSION_KEY, None)
+
+    def active_challenge() -> tuple[PasswordResetChallenge, User] | None:
+        challenge_id = session.get(RECOVERY_SESSION_KEY)
+        if not isinstance(challenge_id, int):
+            return None
+        challenge = db.session.get(PasswordResetChallenge, challenge_id)
+        if challenge is None:
+            return None
+        user = db.session.get(User, challenge.user_id)
+        if user is None:
+            return None
+        return challenge, user
+
+    def recovery_is_verified(challenge: PasswordResetChallenge, user: User) -> bool:
+        now = _utc_now()
+        return bool(
+            challenge.reset_version == user.password_reset_version
+            and challenge.verified_at is not None
+            and challenge.authorization_expires_at is not None
+            and now < challenge.authorization_expires_at
+            and challenge.consumed_at is None
+        )
+
     @app.route("/forgot-password", methods=["GET", "POST"])
     def forgot_password():
         email_input = request.form.get("email", "")
         errors: dict[str, str] = {}
 
         if request.method == "POST":
+            clear_recovery_session()
             canonical_email = normalize_email(email_input)
-            if not canonical_email:
-                errors["email"] = "Vui lòng nhập Email."
+            if not canonical_email or "@" not in canonical_email:
+                errors["email"] = "Vui lòng nhập email hợp lệ."
             else:
-                try:
-                    user = db.session.execute(
-                        db.select(User).where(User.email == canonical_email)
-                    ).scalar_one_or_none()
-                    if user is not None:
-                        result = db.session.execute(
-                            update(User)
-                            .where(User.id == user.id)
-                            .values(
-                                password_reset_version=(
-                                    User.password_reset_version + 1
-                                )
-                            ),
-                            execution_options={"synchronize_session": False},
-                        )
-                        if result.rowcount != 1:
-                            db.session.rollback()
-                            flash(FORGOT_PASSWORD_MESSAGE, "success")
-                            return redirect(
-                                url_for("forgot_password"), code=303
-                            )
-                        db.session.refresh(user, ["password_reset_version"])
-                        db.session.commit()
-                        token = generate_password_reset_token(
-                            user, app.config["SECRET_KEY"]
-                        )
-                        send_password_reset_email(
-                            recipient=user.email,
-                            token=token,
-                            config=app.config,
-                        )
-                except SQLAlchemyError:
-                    db.session.rollback()
-                    app.logger.error(
-                        "Password reset request could not be processed."
-                    )
-                except (TypeError, ValueError):
-                    app.logger.error(
-                        "Password reset token or email configuration is invalid."
-                    )
-
+                user = db.session.execute(
+                    db.select(User).where(User.email == canonical_email)
+                ).scalar_one_or_none()
+                if user is not None:
+                    try:
+                        issue_recovery_challenge(user)
+                    except SQLAlchemyError:
+                        db.session.rollback()
+                        app.logger.error("Password reset request could not be processed.")
                 flash(FORGOT_PASSWORD_MESSAGE, "success")
-                return redirect(url_for("forgot_password"), code=303)
+                return redirect(url_for("verify_reset_code"), code=303)
 
         return render_template(
             "forgot_password.html", email=email_input, errors=errors
         )
 
-    @app.route("/reset-password/<token>", methods=["GET", "POST"])
-    def reset_password(token: str):
-        user = validate_password_reset_token(
-            token,
-            app.config["SECRET_KEY"],
-            lambda user_id: db.session.get(User, user_id),
-        )
-        if user is None:
-            return (
-                render_template(
-                    "reset_password.html",
-                    token_valid=False,
-                    errors={},
-                    service_error=INVALID_RESET_TOKEN_MESSAGE,
-                ),
-                400,
-            )
+    @app.route("/resend-reset-code", methods=["POST"])
+    def resend_reset_code():
+        current = active_challenge()
+        if current is None:
+            clear_recovery_session()
+            return redirect(url_for("forgot_password"), code=303)
+        _challenge, user = current
+        try:
+            issue_recovery_challenge(user)
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.error("Password reset resend could not be processed.")
+        flash(FORGOT_PASSWORD_MESSAGE, "success")
+        return redirect(url_for("verify_reset_code"), code=303)
 
+    @app.route("/verify-reset-code", methods=["GET", "POST"])
+    def verify_reset_code():
+        errors: dict[str, str] = {}
+        if request.method == "POST":
+            current = active_challenge()
+            code = request.form.get("otp", "")
+            if current is None:
+                clear_recovery_session()
+                errors["otp"] = INVALID_RESET_CODE_MESSAGE
+            else:
+                challenge, user = current
+                now = _utc_now()
+                usable = (
+                    challenge.reset_version == user.password_reset_version
+                    and challenge.delivery_status == "sent"
+                    and now < challenge.expires_at
+                    and challenge.failed_attempts < 5
+                    and challenge.verified_at is None
+                    and challenge.consumed_at is None
+                )
+                if not usable:
+                    errors["otp"] = INVALID_RESET_CODE_MESSAGE
+                else:
+                    well_formed = (
+                        len(code) == 6 and code.isascii() and code.isdecimal()
+                    )
+                    matched = well_formed and otp_matches(
+                        challenge.otp_digest,
+                        app.config["SECRET_KEY"],
+                        challenge.id,
+                        user.id,
+                        challenge.reset_version,
+                        code,
+                    )
+                    if matched:
+                        challenge.verified_at = now
+                        challenge.authorization_expires_at = now + timedelta(
+                            minutes=10
+                        )
+                        db.session.commit()
+                        return redirect(url_for("reset_password"), code=303)
+                    challenge.failed_attempts += 1
+                    db.session.commit()
+                    errors["otp"] = INVALID_RESET_CODE_MESSAGE
+        return render_template("verify_reset_code.html", errors=errors)
+
+    @app.route("/reset-password", methods=["GET", "POST"])
+    def reset_password():
+        current = active_challenge()
+        if current is None or not recovery_is_verified(*current):
+            clear_recovery_session()
+            if request.method == "GET":
+                return redirect(url_for("forgot_password"), code=303)
+            return render_template(
+                "verify_reset_code.html", errors={"otp": INVALID_RESET_CODE_MESSAGE}
+            ), 400
+        challenge, user = current
         errors: dict[str, str] = {}
         if request.method == "POST":
             new_password = request.form.get("new_password", "")
@@ -648,23 +747,17 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 errors["new_password"] = "Mật khẩu phải có ít nhất 8 ký tự."
             if not confirm_password:
                 errors["confirm_password"] = "Vui lòng xác nhận mật khẩu mới."
-            elif new_password and confirm_password != new_password:
+            elif new_password and new_password != confirm_password:
                 errors["confirm_password"] = "Mật khẩu xác nhận không khớp."
-
             if errors:
                 return render_template(
-                    "reset_password.html",
-                    token_valid=True,
-                    token=token,
-                    errors=errors,
-                    service_error=None,
+                    "reset_password.html", errors=errors, service_error=None
                 )
 
-            expected_version = user.password_reset_version
             try:
+                # Conditional update protects against a concurrent newer request.
+                expected_version = challenge.reset_version
                 user.set_password(new_password)
-                new_password_hash = user.password_hash
-                db.session.expire(user, ["password_hash"])
                 result = db.session.execute(
                     update(User)
                     .where(
@@ -672,49 +765,30 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                         User.password_reset_version == expected_version,
                     )
                     .values(
-                        password_hash=new_password_hash,
+                        password_hash=user.password_hash,
                         password_reset_version=expected_version + 1,
                     ),
                     execution_options={"synchronize_session": False},
                 )
+                challenge.consumed_at = _utc_now()
                 if result.rowcount != 1:
                     db.session.rollback()
-                    return (
-                        render_template(
-                            "reset_password.html",
-                            token_valid=False,
-                            errors={},
-                            service_error=INVALID_RESET_TOKEN_MESSAGE,
-                        ),
-                        400,
-                    )
+                    clear_recovery_session()
+                    return redirect(url_for("forgot_password"), code=303)
                 db.session.commit()
             except SQLAlchemyError:
                 db.session.rollback()
                 app.logger.error("Password reset database update failed.")
-                return (
-                    render_template(
-                        "reset_password.html",
-                        token_valid=True,
-                        token=token,
-                        errors={},
-                        service_error=(
-                            "Hệ thống tạm thời không thể xử lý yêu cầu. "
-                            "Vui lòng thử lại."
-                        ),
-                    ),
-                    503,
-                )
-
+                return render_template(
+                    "reset_password.html", errors={},
+                    service_error=RECOVERY_SERVICE_ERROR,
+                ), 503
+            clear_recovery_session()
             flash(RESET_PASSWORD_SUCCESS_MESSAGE, "success")
             return redirect(url_for("login"), code=303)
 
         return render_template(
-            "reset_password.html",
-            token_valid=True,
-            token=token,
-            errors=errors,
-            service_error=None,
+            "reset_password.html", errors=errors, service_error=None
         )
 
     @app.route("/register", methods=["GET", "POST"])
@@ -1941,6 +2015,24 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(_error: CSRFError):
+        if request.endpoint == "forgot_password":
+            return render_template(
+                "forgot_password.html",
+                email=request.form.get("email", ""),
+                errors={},
+                service_error="Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.",
+            ), 400
+        if request.endpoint in {"verify_reset_code", "resend_reset_code"}:
+            return render_template(
+                "verify_reset_code.html",
+                errors={"otp": "Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."},
+            ), 400
+        if request.endpoint == "reset_password":
+            return render_template(
+                "reset_password.html",
+                errors={},
+                service_error="Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.",
+            ), 400
         if request.endpoint == "change_password":
             user = current_user()
             if user is None:

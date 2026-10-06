@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Xác nhận mã | Quản lý Khách sạn</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="auth-card" aria-labelledby="verify-code-title">
+        <p class="eyebrow">Hệ thống Quản lý Khách sạn</p>
+        <h1 id="verify-code-title">Xác nhận mã</h1>
+        <p class="intro">Nhập mã gồm 6 chữ số được gửi đến email của bạn.</p>
+
+        {% with success_messages = get_flashed_messages(category_filter=["success"]) %}
+          {% for message in success_messages %}
+            <div class="alert alert-success" role="status">{{ message }}</div>
+          {% endfor %}
+        {% endwith %}
+
+        <form method="post" action="{{ url_for('verify_reset_code') }}" novalidate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="field">
+            <label for="otp">Mã xác nhận</label>
+            <input id="otp" name="otp" type="text" inputmode="numeric"
+              autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"
+              required autofocus {% if errors.get('otp') %}aria-invalid="true" aria-describedby="otp-error"{% endif %}>
+            {% if errors.get('otp') %}
+              <p id="otp-error" class="field-error">{{ errors['otp'] }}</p>
+            {% endif %}
+          </div>
+          <button type="submit">Xác nhận</button>
+        </form>
+        <form method="post" action="{{ url_for('resend_reset_code') }}" class="auth-switch">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit">Gửi mã mới</button>
+        </form>
+        <p class="auth-switch"><a href="{{ url_for('forgot_password') }}">Dùng email khác</a></p>
+      </section>
+    </main>
+  </body>
+</html>

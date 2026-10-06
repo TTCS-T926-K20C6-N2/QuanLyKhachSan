@@ -34,6 +34,31 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
 
+class PasswordResetChallenge(db.Model):
+    """One persisted OTP attempt and its one-use reset authorization."""
+
+    __tablename__ = "password_reset_challenges"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "reset_version"),
+        db.Index("ix_password_reset_user_created", "user_id", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    reset_version = db.Column(db.Integer, nullable=False)
+    otp_digest = db.Column(db.String(64), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    failed_attempts = db.Column(db.Integer, nullable=False, default=0)
+    delivery_status = db.Column(db.String(16), nullable=False, default="pending")
+    verified_at = db.Column(db.DateTime, nullable=True)
+    authorization_expires_at = db.Column(db.DateTime, nullable=True)
+    consumed_at = db.Column(db.DateTime, nullable=True)
+
+
 class RoomType(db.Model):
     """Persistent catalog entry for an editable room type."""
 
