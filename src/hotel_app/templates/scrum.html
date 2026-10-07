@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="padding: 30px;">
+    <h1>Scrum cá nhân</h1>
+    <p>Hệ thống Quản lý Khách sạn</p>
+
+    <div style="
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 20px;
+        margin-top: 30px;
+    ">
+
+        <div>
+            <h2>📋 Backlog</h2>
+            <div style="padding:15px; border:1px solid #ccc; margin-bottom:10px;">
+                Phân tích yêu cầu hệ thống
+            </div>
+            <div style="padding:15px; border:1px solid #ccc;">
+                Hoàn thiện giao diện
+            </div>
+        </div>
+
+        <div>
+            <h2>📝 To Do</h2>
+            <div style="padding:15px; border:1px solid #ccc; margin-bottom:10px;">
+                Kiểm tra chức năng quản lý phòng
+            </div>
+            <div style="padding:15px; border:1px solid #ccc;">
+                Viết kiểm thử
+            </div>
+        </div>
+
+        <div>
+            <h2>⚙️ In Progress</h2>
+            <div style="padding:15px; border:1px solid #ccc;">
+                Xây dựng Scrum cá nhân
+            </div>
+        </div>
+
+        <div>
+            <h2>✅ Done</h2>
+            <div style="padding:15px; border:1px solid #ccc; margin-bottom:10px;">
+                Thiết lập project
+            </div>
+            <div style="padding:15px; border:1px solid #ccc;">
+                Chạy hệ thống thành công
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

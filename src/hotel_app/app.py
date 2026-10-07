@@ -791,6 +791,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             "reset_password.html", errors=errors, service_error=None
         )
 
+    @app.route("/scrum")
+    def scrum():
+        return render_template("scrum.html") 
+
     @app.route("/register", methods=["GET", "POST"])
     def register():
         if current_user() is not None:
