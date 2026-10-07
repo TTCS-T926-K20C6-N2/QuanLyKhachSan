@@ -190,6 +190,29 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-card__delete { display: flex; min-width: 0; grid-column: 1 / -1; }
 .room-card__delete .action-button { width: 100%; }
 .room-actions > .action-button { min-width: 0; }
+.room-actions__rental {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  white-space: normal;
+  overflow-wrap: normal;
+  text-align: center;
+}
+
+.room-checkout {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+.room-checkout .action-button {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+}
 .room-type-table-wrap { overflow-x: auto; }
 .room-type-table { width: 100%; min-width: 560px; border-collapse: collapse; }
 .room-type-table th,

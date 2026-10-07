@@ -86,13 +86,25 @@
                   Cho thuê
                 </a>
               {% elif room.status == 'Đang thuê' and room.state == 'occupied' and room.id in active_room_rentals %}
-                <a
-                  class="action-button action-button--edit room-actions__rental"
-                  href="{{ url_for('edit_room_rental', room_number=room.number) }}"
-                >
-                  Tùy chọn cho thuê
-                </a>
-              {% endif %}
+  <a
+    class="action-button action-button--edit room-actions__rental"
+    href="{{ url_for('edit_room_rental', room_number=room.number) }}"
+  >
+    Tùy chọn cho thuê
+  </a>
+
+  <form
+    class="room-checkout"
+    method="post"
+    action="{{ url_for('checkout_room', room_number=room.number) }}"
+    onsubmit="return confirm('Bạn có chắc muốn trả phòng {{ room.number }}?');"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="action-button action-button--primary">
+      Trả phòng
+    </button>
+  </form>
+{% endif %}
               <a class="action-button action-button--edit" href="{{ url_for('edit_room', room_number=room.number) }}">
                 Cập nhật
               </a>
