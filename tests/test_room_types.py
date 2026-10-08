@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta
 from copy import deepcopy
 from html import unescape
 from io import BytesIO
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 from conftest import DEMO_EMAIL, DEMO_PASSWORD, create_app
 from hotel_app.app import ROOM_FLOORS, ROOM_TYPE_CATALOG
 from hotel_app.extensions import db
-from hotel_app.models import Room, RoomType, User
+from hotel_app.models import Room, RoomRental, RoomType, User
 
 
 def _csrf_token(client) -> str:
@@ -292,7 +293,7 @@ def test_room_list_is_flat_complete_unique_and_sorted(client, app):
     assert f"{len(stored_rooms)} phòng" in html
     assert not any(floor in html for floor in ("Tầng 1", "Tầng 2", "Tầng 3", "Phòng mới"))
     assert html.count('class="action-button action-button--edit"') == 14
-    assert html.count('class="room-card__delete"') == 14
+    assert html.count('class="room-card__delete room-actions__full"') == 14
     with app.app_context():
         floors_after = {
             room.number: room.floor
@@ -2212,3 +2213,56 @@ def test_home_renders_room_list_without_management_controls(client):
     assert html.count('class="room-card room-card--') == 12
     assert "Cập nhật phòng" not in html
     assert "Xóa phòng" not in html
+
+
+def test_room_cards_render_available_and_occupied_actions(client, app):
+    assert _login(client).status_code == 302
+    _add_test_room(app, "502", "Phòng đơn")
+    occupied_id = _add_test_room(
+        app,
+        "503",
+        "Phòng đơn",
+        status="Đang thuê",
+        state="occupied",
+        check_in="14:00",
+        check_out="16:00",
+    )
+    with app.app_context():
+        rented_at = datetime.now().replace(second=0, microsecond=0)
+        db.session.add(RoomRental(
+            room_id=occupied_id,
+            room_number="503",
+            rented_at=rented_at,
+            expected_checkout=rented_at + timedelta(hours=2),
+            duration_minutes=120,
+            nightly_rate=500000,
+            total_price=41667,
+        ))
+        db.session.commit()
+
+    html = client.get("/rooms").get_data(as_text=True)
+    available_card = _room_card_html(html, "502")
+    occupied_card = _room_card_html(html, "503")
+    available_actions = available_card.split('<div class="room-actions">', 1)[1].split("</div>", 1)[0]
+    occupied_actions = occupied_card.split('<div class="room-actions">', 1)[1].split("</div>", 1)[0]
+
+    assert available_actions.count('class="action-button') == 3
+    assert "Cho thuê" in available_actions
+    assert "Cập nhật" in available_actions
+    assert "Xóa phòng" in available_actions
+    assert "Trả phòng" not in available_actions
+    assert "Điều chỉnh thuê" not in available_actions
+    assert 'href="/rooms/502/rent/edit"' not in available_actions
+
+    assert 'class="room-card room-card--occupied"' in html.replace("\\n", "\n")
+    assert "Đang thuê" in occupied_card
+    assert occupied_actions.count('class="action-button') == 2
+    assert "Điều chỉnh thuê" in occupied_actions
+    assert "Trả phòng" in occupied_actions
+    assert "Cho thuê" not in occupied_actions
+    assert "Cập nhật" not in occupied_actions
+    assert "Xóa phòng" not in occupied_actions
+    assert 'href="/rooms/503/rent"' not in occupied_actions
+    assert 'href="/rooms/503/edit"' not in occupied_actions
+    assert 'action="/rooms/503/delete"' not in occupied_actions
+    assert 'style="pointer-events: none' not in html

@@ -29,6 +29,18 @@ def _login(client):
     )
 
 
+def _room_card_html(html: str, room_number: str) -> str:
+    match = re.search(
+        rf'<article\s+class="room-card [^"]+"\s+'
+        rf'aria-label="Phòng {re.escape(room_number)}, [^"]+"\s*>'
+        r"(.*?)</article>",
+        html,
+        re.DOTALL,
+    )
+    assert match is not None
+    return match.group(1)
+
+
 def _datetime_local(value: datetime) -> str:
     return value.strftime("%Y-%m-%dT%H:%M")
 
@@ -182,7 +194,7 @@ def test_active_rental_can_change_checkout_and_recalculate_price(client, app):
     assert _datetime_local(old_checkout) in edit_page
     listing = client.get("/rooms").get_data(as_text=True)
     assert 'href="/rooms/101/rent/edit"' in listing
-    assert "Tùy chọn cho thuê" in listing
+    assert "Điều chỉnh thuê" in listing
 
     response = client.post(
         "/rooms/101/rent/edit",
@@ -258,3 +270,48 @@ def test_rental_requires_csrf_token(client):
         data={"expected_checkout": _datetime_local(datetime.now() + timedelta(hours=1))},
     )
     assert response.status_code == 400
+
+
+def test_room_card_actions_follow_rental_and_checkout_lifecycle(client, app):
+    assert _login(client).status_code == 302
+    rented = _rent_room(client, "101")
+
+    listing = client.get("/rooms").get_data(as_text=True)
+    occupied_card = _room_card_html(listing, "101")
+    actions = occupied_card
+    assert "Điều chỉnh thuê" in actions
+    assert "Trả phòng" in actions
+    assert "Cập nhật" not in actions
+    assert "Xóa phòng" not in actions
+    assert 'href="/rooms/101/rent"' not in actions
+    checkout_form = re.search(
+        r'<form(?:(?!>).)*class="room-checkout"(?:(?!>).)*action="/rooms/101/checkout"[^>]*>(.*?)</form>',
+        occupied_card,
+        re.DOTALL,
+    )
+    assert checkout_form is not None
+    token = re.search(r'name="csrf_token" value="([^"]+)"', checkout_form.group(1))
+    assert token is not None
+
+    no_csrf_client = client.application.test_client()
+    assert no_csrf_client.post("/rooms/101/checkout").status_code == 400
+
+    response = client.post("/rooms/101/checkout", data={"csrf_token": token.group(1)})
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/rooms")
+    available_listing = client.get("/rooms").get_data(as_text=True)
+    available_card = _room_card_html(available_listing, "101")
+    available_actions = available_card.split('<div class="room-actions">', 1)[1].split("</div>", 1)[0]
+    assert "Cho thuê" in available_actions
+    assert "Cập nhật" in available_actions
+    assert "Xóa phòng" in available_actions
+    assert "Điều chỉnh thuê" not in available_actions
+    assert "Trả phòng" not in available_actions
+    with app.app_context():
+        room = db.session.execute(db.select(Room).where(Room.number == "101")).scalar_one()
+        rental = db.session.get(RoomRental, rented.id)
+        assert room.status == "Phòng trống"
+        assert room.state == "empty"
+        assert room.check_in is None
+        assert room.check_out is None
+        assert rental is not None

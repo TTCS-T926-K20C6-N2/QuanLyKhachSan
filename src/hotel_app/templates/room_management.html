@@ -39,7 +39,7 @@
       <div class="room-grid">
         {% for room in rooms %}
           <article
-            class="room-card room-card--{{ room.state }}"
+            class="room-card{% if room.status == 'Đang thuê' or room.state == 'occupied' %} room-card--occupied{% else %} room-card--{{ room.state }}{% endif %}"
             aria-label="Phòng {{ room.number }}, {{ room.status }}"
           >
             <div class="room-card__top">
@@ -85,40 +85,39 @@
                 >
                   Cho thuê
                 </a>
+                <a class="action-button action-button--edit" href="{{ url_for('edit_room', room_number=room.number) }}">
+                  Cập nhật
+                </a>
+                <form
+                  method="post"
+                  action="{{ url_for('delete_room', room_number=room.number) }}"
+                  class="room-card__delete room-actions__full"
+                  onsubmit="return confirm('Bạn có chắc muốn xóa phòng {{ room.number }}?');"
+                >
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="action-button action-button--delete" aria-label="Xóa phòng {{ room.number }}">
+                    Xóa phòng
+                  </button>
+                </form>
               {% elif room.status == 'Đang thuê' and room.state == 'occupied' and room.id in active_room_rentals %}
-  <a
-    class="action-button action-button--edit room-actions__rental"
-    href="{{ url_for('edit_room_rental', room_number=room.number) }}"
-  >
-    Tùy chọn cho thuê
-  </a>
-
-  <form
-    class="room-checkout"
-    method="post"
-    action="{{ url_for('checkout_room', room_number=room.number) }}"
-    onsubmit="return confirm('Bạn có chắc muốn trả phòng {{ room.number }}?');"
-  >
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" class="action-button action-button--primary">
-      Trả phòng
-    </button>
-  </form>
-{% endif %}
-              <a class="action-button action-button--edit" href="{{ url_for('edit_room', room_number=room.number) }}">
-                Cập nhật
-              </a>
-              <form
-                method="post"
-                action="{{ url_for('delete_room', room_number=room.number) }}"
-                class="room-card__delete"
-                onsubmit="return confirm('Bạn có chắc muốn xóa phòng {{ room.number }}?');"
-              >
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="action-button action-button--delete" aria-label="Xóa phòng {{ room.number }}">
-                  Xóa phòng
-                </button>
-              </form>
+                <a
+                  class="action-button action-button--edit room-actions__rental"
+                  href="{{ url_for('edit_room_rental', room_number=room.number) }}"
+                >
+                  Điều chỉnh thuê
+                </a>
+                <form
+                  class="room-checkout"
+                  method="post"
+                  action="{{ url_for('checkout_room', room_number=room.number) }}"
+                  onsubmit="return confirm('Bạn có chắc muốn trả phòng {{ room.number }}?');"
+                >
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="action-button action-button--primary">
+                    Trả phòng
+                  </button>
+                </form>
+              {% endif %}
             </div>
           </article>
         {% endfor %}
