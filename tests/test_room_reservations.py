@@ -107,7 +107,7 @@ def test_reservation_after_active_checkout_keeps_room_and_rental_unchanged(clien
         before_room = (room.status, room.state, room.check_in, room.check_out)
         rental = db.session.get(RoomRental, rental_id)
         before_rental = (rental.rented_at, rental.expected_checkout, rental.duration_minutes, rental.nightly_rate, rental.total_price)
-        start = rental.expected_checkout
+        start = rental.expected_checkout + timedelta(minutes=60)
     response = _create_reservation(client, start=start, end=start + timedelta(days=2))
     assert response.status_code == 302
     with app.app_context():
@@ -130,8 +130,8 @@ def test_reservation_overlapping_current_rental_is_rejected_and_checkout_boundar
         rental = db.session.execute(db.select(RoomRental).where(RoomRental.room_id == room_id)).scalar_one()
         checkout = rental.expected_checkout
     response = _create_reservation(client, start=checkout-timedelta(minutes=1), end=checkout+timedelta(days=1))
-    assert response.status_code == 400 and "lượt thuê hiện tại" in response.get_data(as_text=True)
-    response = _create_reservation(client, start=checkout, end=checkout+timedelta(days=1))
+    assert response.status_code == 400 and "60 phút" in response.get_data(as_text=True)
+    response = _create_reservation(client, start=checkout+timedelta(minutes=60), end=checkout+timedelta(days=1))
     assert response.status_code == 302
 
 
@@ -151,7 +151,7 @@ def test_booked_reservation_intervals_reject_every_overlap_shape(client, app, ki
     _add_reservation(app, room_id, old_start, old_end)
     intervals = {"inside": (old_start+timedelta(hours=1), old_end+timedelta(hours=1)), "contained": (old_start+timedelta(hours=1), old_end-timedelta(hours=1)), "contains": (old_start-timedelta(hours=1), old_end+timedelta(hours=1)), "tail": (old_start-timedelta(hours=1), old_start+timedelta(hours=1))}
     response = _create_reservation(client, start=intervals[kind][0], end=intervals[kind][1])
-    assert response.status_code == 400 and "lịch đặt khác" in response.get_data(as_text=True)
+    assert response.status_code == 400 and "60 phút" in response.get_data(as_text=True)
 
 
 def test_adjacent_and_multiple_room_reservations_are_allowed(client, app):
@@ -161,7 +161,7 @@ def test_adjacent_and_multiple_room_reservations_are_allowed(client, app):
     now = _now_minute()
     start = now + timedelta(days=4)
     _add_reservation(app, first_id, start, start+timedelta(days=1))
-    response = _create_reservation(client, start=start+timedelta(days=1), end=start+timedelta(days=2))
+    response = _create_reservation(client, start=start+timedelta(days=1, minutes=60), end=start+timedelta(days=2))
     assert response.status_code == 302
     response = _create_reservation(client, "102", start=start, end=start+timedelta(days=1))
     assert response.status_code == 302
@@ -241,7 +241,7 @@ def test_immediate_rental_may_end_before_booking_but_not_overlap(client, app):
     response = client.post("/rooms/101/rent", data={"csrf_token": _token(client, "/rooms/101/rent"), "expected_checkout": _local(now+timedelta(hours=1))})
     assert response.status_code == 302
     response = client.post("/rooms/102/rent", data={"csrf_token": _token(client, "/rooms/102/rent"), "expected_checkout": _local(now+timedelta(hours=3))})
-    assert response.status_code == 400 and "lịch đặt trước" in response.get_data(as_text=True)
+    assert response.status_code == 400 and "60 phút" in response.get_data(as_text=True)
     with app.app_context():
         assert db.session.execute(db.select(RoomRental).where(RoomRental.room_id == room_id)).scalar_one_or_none() is not None
         assert db.session.execute(db.select(RoomRental).where(RoomRental.room_id == other_room_id)).scalar_one_or_none() is None
@@ -257,11 +257,11 @@ def test_rental_extension_cannot_overlap_future_booking_and_rejection_is_atomic(
         before = db.session.get(RoomRental, rental_id)
         values = (before.expected_checkout, before.duration_minutes, before.total_price, db.session.get(Room, room_id).check_out)
     response = client.post("/rooms/101/rent/edit", data={"csrf_token": _token(client, "/rooms/101/rent/edit"), "expected_checkout": _local(booking_start+timedelta(hours=1))})
-    assert response.status_code == 400 and "lịch đặt trước" in response.get_data(as_text=True)
+    assert response.status_code == 400 and "60 phút" in response.get_data(as_text=True)
     with app.app_context():
         rental = db.session.get(RoomRental, rental_id)
         assert (rental.expected_checkout, rental.duration_minutes, rental.total_price, db.session.get(Room, room_id).check_out) == values
-    response = client.post("/rooms/101/rent/edit", data={"csrf_token": _token(client, "/rooms/101/rent/edit"), "expected_checkout": _local(booking_start)})
+    response = client.post("/rooms/101/rent/edit", data={"csrf_token": _token(client, "/rooms/101/rent/edit"), "expected_checkout": _local(booking_start-timedelta(minutes=60))})
     assert response.status_code == 302
 
 
@@ -277,7 +277,14 @@ def test_early_checkout_keeps_booked_reservation_unchanged(client, app):
     with app.app_context():
         room = db.session.get(Room, room_id)
         reservation = db.session.get(RoomReservation, reservation_id)
-        assert (room.status, room.state, room.check_in, room.check_out) == ("Phòng trống", "empty", None, None)
+        assert (room.status, room.state, room.check_in, room.check_out) == ("Dọn dẹp", "cleaning", None, None)
+        assert reservation.status == "booked" and reservation.reserved_from == start
+    completed = client.post("/rooms/101/cleaning/complete", data={"csrf_token": _token(client, "/rooms")})
+    assert completed.status_code == 302
+    with app.app_context():
+        room = db.session.get(Room, room_id)
+        reservation = db.session.get(RoomReservation, reservation_id)
+        assert (room.status, room.state) == ("Phòng trống", "empty")
         assert reservation.status == "booked" and reservation.reserved_from == start
 
 
@@ -447,7 +454,7 @@ def test_editing_booking_into_another_booking_is_rejected_without_mutation(clien
         "csrf_token": _token(client, f"/rooms/101/reservations/{first_id}/edit"),
         **_reservation_data(start=second_start, end=second_start+timedelta(hours=12)),
     })
-    assert response.status_code == 400 and "lịch đặt khác" in response.get_data(as_text=True)
+    assert response.status_code == 400 and "60 phút" in response.get_data(as_text=True)
     with app.app_context():
         first, second = db.session.get(RoomReservation, first_id), db.session.get(RoomReservation, second_id)
         assert first.reserved_from == first_start and first.reserved_until == first_start+timedelta(days=1)

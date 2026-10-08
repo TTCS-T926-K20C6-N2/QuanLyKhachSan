@@ -1,10 +1,11 @@
 {% set rental_display = room_display_values.get(rent_modal_room.id) if rent_modal_room else none %}
+{% set displayed_nightly_rate = rental_nightly_rate if rental_edit_mode else (rental_display.price if rental_display else none) %}
 {% set rental_image = (url_for('room_image', filename=rent_modal_room.image) if rent_modal_room.image else url_for('static', filename='images/room-double.jpg')) if rent_modal_room else '' %}
 <dialog
   class="room-dialog rent-dialog"
   id="rent-room-dialog"
   aria-labelledby="rent-dialog-title"
-  data-nightly-rate="{{ rental_display.price if rental_display else '' }}"
+  data-nightly-rate="{{ displayed_nightly_rate if displayed_nightly_rate is not none else '' }}"
   data-edit-mode="{{ 'true' if rental_edit_mode else 'false' }}"
   {% if rent_modal_open %}data-open-on-load{% endif %}
 >
@@ -34,7 +35,7 @@
     id="rent-room-form"
     method="post"
     action="{{ url_for('edit_room_rental' if rental_edit_mode else 'rent_room', room_number=rent_modal_room.number) if rent_modal_room else '#' }}"
-    data-nightly-rate="{{ rental_display.price if rental_display else '' }}"
+    data-nightly-rate="{{ displayed_nightly_rate if displayed_nightly_rate is not none else '' }}"
   >
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -51,11 +52,25 @@
         <div><dt>Thể loại</dt><dd id="rent-room-type">{{ rent_modal_room.type if rent_modal_room else '' }}</dd></div>
         <div><dt>Trạng thái</dt><dd id="rent-room-status">{{ rent_modal_room.status if rent_modal_room else '' }}</dd></div>
         <div class="rent-room-details__wide"><dt>Mô tả</dt><dd id="rent-room-description">{{ rental_display.description if rental_display else '' }}</dd></div>
-        <div><dt>Giá thuê</dt><dd id="rent-room-price">{% if rental_display %}{{ "{:,.0f}".format(rental_display.price) }} VNĐ / đêm{% endif %}</dd></div>
+        <div><dt>{{ 'Giá áp dụng cho lượt thuê' if rental_edit_mode else 'Giá thuê' }}</dt><dd id="rent-room-price">{% if displayed_nightly_rate is not none %}{{ "{:,.0f}".format(displayed_nightly_rate) }} VNĐ / đêm{% endif %}{% if rental_edit_mode %}<small class="field-hint">Giữ nguyên theo giá tại thời điểm bắt đầu thuê.</small>{% endif %}</dd></div>
         <div><dt>Giờ vào hiện tại</dt><dd id="rent-room-check-in">{{ rent_modal_room.check_in or '—' if rent_modal_room else '—' }}</dd></div>
         <div><dt>Giờ ra hiện tại</dt><dd id="rent-room-check-out">{{ rent_modal_room.check_out or '—' if rent_modal_room else '—' }}</dd></div>
       </dl>
     </section>
+
+    {% if rental_next_reservation %}
+      <div class="form-alert" role="status">
+        <p><strong>{{ 'Lịch đặt trước tiếp theo' if rental_edit_mode else 'Lịch đặt tiếp theo' }}:</strong> {{ rental_next_reservation.reserved_from.strftime('%d/%m/%Y %H:%M') }} → {{ rental_next_reservation.reserved_until.strftime('%d/%m/%Y %H:%M') }}</p>
+        <p>Phòng cần tối thiểu {{ cleaning_buffer_minutes }} phút để dọn dẹp trước lượt đặt tiếp theo.</p>
+        {% if rental_max_checkout %}
+          <p><strong>Giờ trả muộn nhất:</strong> {{ rental_max_checkout.strftime('%d/%m/%Y %H:%M') }}</p>
+          {% if rental_started_at and rental_max_checkout <= rental_started_at %}<p>Không còn thời gian thuê hợp lệ trước lịch đặt này.</p>{% endif %}
+        {% endif %}
+      </div>
+    {% endif %}
+    {% if rental_ready_at and rental_started_at and rental_ready_at > rental_started_at %}
+      <p class="form-alert" role="status"><strong>Sẵn sàng lúc:</strong> {{ rental_ready_at.strftime('%d/%m/%Y %H:%M') }}. Phòng cần đủ {{ cleaning_buffer_minutes }} phút sau lượt thuê trước và đã hoàn tất dọn dẹp.</p>
+    {% endif %}
 
     <div class="rent-time-fields">
       <div class="form-field">
@@ -82,7 +97,8 @@
           name="expected_checkout"
           type="datetime-local"
           value="{{ rental_checkout_value }}"
-          min="{{ rental_min_checkout.strftime('%Y-%m-%dT%H:%M') if rental_min_checkout else (rental_started_at.strftime('%Y-%m-%dT%H:%M') if rental_started_at else '') }}"
+          min="{{ rental_min_checkout_input.strftime('%Y-%m-%dT%H:%M') if rental_edit_mode and rental_min_checkout else (rental_started_at.strftime('%Y-%m-%dT%H:%M') if rental_started_at else '') }}"
+          {% if rental_max_checkout %}max="{{ rental_max_checkout.strftime('%Y-%m-%dT%H:%M') }}"{% endif %}
           required
           aria-describedby="expected-checkout-error"
         >

@@ -29,12 +29,28 @@
     {% if update_mode %}
       <div class="form-field">
         <label for="room-status">Trạng thái phòng</label>
-        <select id="room-status" name="status" required aria-describedby="room-status-error">
-          <option value="Phòng trống"{% if status == 'Phòng trống' %} selected{% endif %}>Phòng trống</option>
-          <option value="Đang thuê"{% if status == 'Đang thuê' %} selected{% endif %}>Đang thuê</option>
-        </select>
+        {% if room_status_options|length == 1 %}
+          <p id="room-status" class="field-hint" role="status">Bảo trì</p>
+        {% else %}
+          <select id="room-status" name="status" required aria-describedby="room-status-error">
+            {% for value, label in room_status_options %}
+              <option value="{{ value }}"{% if status == value %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        {% endif %}
         {% if errors.get('status') %}<small class="field-error" id="room-status-error">{{ errors.status }}</small>{% endif %}
       </div>
+      {% if status in ['Phòng trống', 'Dọn dẹp'] %}
+        <div class="form-field form-field--wide">
+          <label for="maintenance-note">Lý do bảo trì (không bắt buộc)</label>
+          <textarea id="maintenance-note" name="maintenance_note" rows="2" maxlength="500" aria-describedby="maintenance-note-help maintenance-note-error">{{ maintenance_note }}</textarea>
+          <small id="maintenance-note-help" class="field-hint">Chỉ lưu khi chuyển phòng sang Bảo trì.</small>
+          {% if errors.get('maintenance_note') %}<small class="field-error" id="maintenance-note-error">{{ errors.maintenance_note }}</small>{% endif %}
+        </div>
+      {% endif %}
+      {% if maintenance_reservation_count %}
+        <p class="form-alert form-alert--warning form-field--wide" role="status">Phòng này đang có {{ maintenance_reservation_count }} lịch đặt trước đang hiệu lực. Chuyển sang bảo trì không hủy lịch đặt.</p>
+      {% endif %}
     {% endif %}
 
     <div class="form-field form-field--wide">

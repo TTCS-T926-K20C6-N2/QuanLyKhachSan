@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from conftest import DEMO_EMAIL, DEMO_PASSWORD
 from hotel_app.extensions import db
-from hotel_app.models import Room, RoomRental
+from hotel_app.models import Room, RoomRental, RoomReservation
 
 
 def _csrf_token(client, path: str = "/login") -> str:
@@ -302,16 +303,183 @@ def test_room_card_actions_follow_rental_and_checkout_lifecycle(client, app):
     available_listing = client.get("/rooms").get_data(as_text=True)
     available_card = _room_card_html(available_listing, "101")
     available_actions = available_card.split('<div class="room-actions">', 1)[1].split("</div>", 1)[0]
-    assert "Cho thuê" in available_actions
-    assert "Cập nhật" in available_actions
-    assert "Xóa phòng" in available_actions
+    assert "Hoàn tất dọn dẹp" in available_actions
+    assert "Cho thuê" not in available_actions
+    assert "Xóa phòng" not in available_actions
     assert "Điều chỉnh thuê" not in available_actions
     assert "Trả phòng" not in available_actions
     with app.app_context():
         room = db.session.execute(db.select(Room).where(Room.number == "101")).scalar_one()
         rental = db.session.get(RoomRental, rented.id)
-        assert room.status == "Phòng trống"
-        assert room.state == "empty"
+        assert room.status == "Dọn dẹp"
+        assert room.state == "cleaning"
         assert room.check_in is None
         assert room.check_out is None
         assert rental is not None
+
+
+def test_rental_edit_uses_saved_nightly_rate_after_room_price_changes(client, app):
+    assert _login(client).status_code == 302
+    rental = _rent_room(client)
+    with app.app_context():
+        stored = db.session.get(RoomRental, rental.id)
+        stored.nightly_rate = 500000
+        room = db.session.execute(db.select(Room).where(Room.number == "101")).scalar_one()
+        room.price = 700000
+        db.session.commit()
+        rental_start = stored.rented_at
+    html = client.get("/rooms/101/rent/edit").get_data(as_text=True)
+    assert html.count('data-nightly-rate="500000"') == 2
+    assert "Giá áp dụng cho lượt thuê" in html
+    assert "500,000 VNĐ / đêm" in html
+    assert "Giữ nguyên theo giá tại thời điểm bắt đầu thuê." in html
+    checkout = rental_start + timedelta(hours=3)
+    response = client.post("/rooms/101/rent/edit", data={"csrf_token": _csrf_token(client, "/rooms/101/rent/edit"), "expected_checkout": _datetime_local(checkout)})
+    assert response.status_code == 302
+    with app.app_context():
+        updated = db.session.get(RoomRental, rental.id)
+        assert updated.nightly_rate == 500000
+        assert updated.total_price == int((Decimal(500000) * Decimal(180) / Decimal(1440)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def test_new_rental_modal_keeps_current_effective_room_price(client, app):
+    assert _login(client).status_code == 302
+    with app.app_context():
+        room = db.session.execute(db.select(Room).where(Room.number == "101")).scalar_one()
+        room.price = 700000
+        db.session.commit()
+    html = client.get("/rooms/101/rent").get_data(as_text=True)
+    assert 'data-nightly-rate="700000"' in html
+    assert "700,000 VNĐ / đêm" in html
+
+
+def test_rental_edit_shows_nearest_booked_reservation_and_ignores_cancelled(client, app):
+    assert _login(client).status_code == 302
+    rental = _rent_room(client)
+    with app.app_context():
+        room = db.session.execute(db.select(Room).where(Room.number == "101")).scalar_one()
+        base = datetime.now().replace(second=0, microsecond=0) + timedelta(days=2)
+        for label, offset, status in [("Cancelled near", 1, "cancelled"), ("Nearest booked", 3, "booked"), ("Later booked", 8, "booked")]:
+            start = base + timedelta(hours=offset)
+            end = start + timedelta(hours=2)
+            db.session.add(RoomReservation(room_id=room.id, room_number=room.number, guest_name=label, guest_phone="0901234567", reserved_from=start, reserved_until=end, duration_minutes=120, nightly_rate=500000, total_price=41667, status=status, created_at=datetime.now().replace(second=0, microsecond=0)))
+        db.session.commit()
+        nearest = base + timedelta(hours=3)
+        later = base + timedelta(hours=8)
+    html = client.get("/rooms/101/rent/edit").get_data(as_text=True)
+    modal = html.split('<dialog\n  class="room-dialog rent-dialog"', 1)[1].split("</dialog>", 1)[0]
+    assert "Lịch đặt trước tiếp theo:" in modal
+    assert nearest.strftime("%d/%m/%Y %H:%M") in modal
+    assert later.strftime("%d/%m/%Y %H:%M") not in modal
+    assert "Cancelled near" not in modal
+    assert f'max="{_datetime_local(nearest - timedelta(minutes=60))}"' in modal
+
+
+def test_rental_edit_without_upcoming_reservation_has_no_schedule_hint(client):
+    assert _login(client).status_code == 302
+    _rent_room(client)
+    html = client.get("/rooms/101/rent/edit").get_data(as_text=True)
+    assert "Lịch đặt trước tiếp theo:" not in html
+    assert 'id="expected-checkout"' in html
+    assert "max=" not in re.search(r'<input[^>]*id="expected-checkout"[^>]*>', html).group(0)
+
+
+def test_rental_edit_checkout_at_reservation_buffer_boundary_is_allowed(client, app):
+    assert _login(client).status_code == 302
+    rental = _rent_room(client)
+    with app.app_context():
+        room = db.session.execute(db.select(Room).where(Room.number == "101")).scalar_one()
+        start = datetime.now().replace(second=0, microsecond=0) + timedelta(days=1)
+        db.session.add(RoomReservation(room_id=room.id, room_number=room.number, guest_name="Boundary", guest_phone="0901234567", reserved_from=start, reserved_until=start+timedelta(days=1), duration_minutes=1440, nightly_rate=500000, total_price=500000, status="booked", created_at=datetime.now().replace(second=0, microsecond=0)))
+        db.session.commit()
+    response = client.post("/rooms/101/rent/edit", data={"csrf_token": _csrf_token(client, "/rooms/101/rent/edit"), "expected_checkout": _datetime_local(start - timedelta(minutes=60))})
+    assert response.status_code == 302
+    with app.app_context():
+        updated = db.session.get(RoomRental, rental.id)
+        room = db.session.execute(db.select(Room).where(Room.number == "101")).scalar_one()
+        assert updated.expected_checkout == start - timedelta(minutes=60)
+        assert room.check_out == (start - timedelta(minutes=60)).strftime("%H:%M")
+
+
+def test_rental_edit_checkout_after_reservation_start_is_rejected_atomically(client, app):
+    assert _login(client).status_code == 302
+    rental = _rent_room(client)
+    with app.app_context():
+        room = db.session.execute(db.select(Room).where(Room.number == "101")).scalar_one()
+        start = datetime.now().replace(second=0, microsecond=0) + timedelta(days=1)
+        db.session.add(RoomReservation(room_id=room.id, room_number=room.number, guest_name="Boundary", guest_phone="0901234567", reserved_from=start, reserved_until=start+timedelta(days=1), duration_minutes=1440, nightly_rate=500000, total_price=500000, status="booked", created_at=datetime.now().replace(second=0, microsecond=0)))
+        db.session.commit()
+        stored = db.session.get(RoomRental, rental.id)
+        before_rental = (stored.expected_checkout, stored.duration_minutes, stored.total_price)
+        before_checkout = room.check_out
+    rejected = start + timedelta(minutes=1)
+    response = client.post("/rooms/101/rent/edit", data={"csrf_token": _csrf_token(client, "/rooms/101/rent/edit"), "expected_checkout": _datetime_local(rejected)})
+    html = response.get_data(as_text=True)
+    assert response.status_code == 400
+    assert "60 phút" in html
+    assert 'data-open-on-load' in html and _datetime_local(rejected) in html
+    with app.app_context():
+        stored = db.session.get(RoomRental, rental.id)
+        room = db.session.execute(db.select(Room).where(Room.number == "101")).scalar_one()
+        assert (stored.expected_checkout, stored.duration_minutes, stored.total_price) == before_rental
+        assert room.check_out == before_checkout
+
+
+def test_rental_edit_minimum_uses_next_minute_at_minute_precision(client):
+    assert _login(client).status_code == 302
+    _rent_room(client)
+    html = client.get("/rooms/101/rent/edit").get_data(as_text=True)
+    match = re.search(r'<input[^>]*id="expected-checkout"[^>]*min="([^"]+)"', html)
+    assert match is not None
+    minimum = datetime.strptime(match.group(1), "%Y-%m-%dT%H:%M")
+    now_minute = datetime.now().replace(second=0, microsecond=0)
+    assert now_minute + timedelta(minutes=1) <= minimum <= now_minute + timedelta(minutes=2)
+
+
+def test_occupied_room_edit_anchor_and_direct_get_render_usable_edit_modal(client, app):
+    assert _login(client).status_code == 302
+    rental = _rent_room(client)
+    with app.app_context():
+        stored = db.session.get(RoomRental, rental.id)
+        stored.nightly_rate = 612345
+        room = db.session.execute(db.select(Room).where(Room.number == "101")).scalar_one()
+        room.price = 900000
+        db.session.commit()
+        started_at = stored.rented_at
+        expected_checkout = stored.expected_checkout
+
+    listing = client.get("/rooms").get_data(as_text=True)
+    card = _room_card_html(listing, "101")
+    assert card.count('href="/rooms/101/rent/edit"') == 1
+    edit_link = re.search(r'<a\b[^>]*href="/rooms/101/rent/edit"[^>]*>(.*?)</a>', card, re.DOTALL)
+    assert edit_link is not None and "Điều chỉnh thuê" in edit_link.group(1)
+    assert "disabled" not in edit_link.group(0)
+    assert 'aria-disabled="true"' not in edit_link.group(0)
+
+    response = client.get("/rooms/101/rent/edit")
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert 'id="rent-room-dialog"' in html
+    assert 'data-open-on-load' in html
+    assert 'data-edit-mode="true"' in html
+    assert 'action="/rooms/101/rent/edit"' in html
+    assert f'value="{_datetime_local(started_at)}"' in html
+    assert f'value="{_datetime_local(expected_checkout)}"' in html
+    assert html.count('data-nightly-rate="612345"') == 2
+    assert "612,345 VNĐ / đêm" in html
+
+
+def test_room_action_is_not_blocked_by_css_or_unsafe_dialog_initialization():
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "src/hotel_app/static/css/hotel.css").read_text(encoding="utf-8")
+    template = (root / "src/hotel_app/templates/room_management.html").read_text(encoding="utf-8")
+    script = template.split("<script>", 1)[1].split("</script>", 1)[0]
+
+    assert "pointer-events: none" not in css
+    assert ".room-card::before" not in css and ".room-card::after" not in css
+    assert 'document.getElementById("open-room-dialog").addEventListener' not in script
+    assert 'document.getElementById("close-rent-dialog").addEventListener' not in script
+    assert "const bindClick = (id, handler)" in script
+    assert "checkoutInput?.addEventListener" in script
+    assert "if (reservationDialog && reservationStart && reservationEnd" in script
+    assert script.index("rentDialog.showModal();") < script.index('const reservationDialog =')

@@ -1,5 +1,6 @@
 """Database models shared by Login and the future Register slice."""
 
+from sqlalchemy import CheckConstraint, Index, text
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .extensions import db
@@ -142,6 +143,39 @@ class RoomReservation(db.Model):
     total_price = db.Column(db.Integer, nullable=False)
     status = db.Column(db.String(16), nullable=False, default="booked", server_default="booked")
     created_at = db.Column(db.DateTime, nullable=False)
+
+
+class RoomServiceLog(db.Model):
+    """An auditable cleaning or maintenance period for one room."""
+
+    __tablename__ = "room_service_logs"
+    __table_args__ = (
+        CheckConstraint(
+            "service_type IN ('cleaning', 'maintenance')",
+            name="ck_room_service_logs_type",
+        ),
+        CheckConstraint(
+            "ended_at IS NULL OR ended_at >= started_at",
+            name="ck_room_service_logs_period",
+        ),
+        Index(
+            "uq_room_service_logs_one_active_per_room",
+            "room_id",
+            unique=True,
+            sqlite_where=text("ended_at IS NULL AND room_id IS NOT NULL"),
+        ),
+        Index("ix_room_service_logs_room_started", "room_id", "started_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    room_id = db.Column(
+        db.Integer, db.ForeignKey("rooms.id", ondelete="SET NULL"), nullable=True
+    )
+    room_number = db.Column(db.String(20), nullable=False)
+    service_type = db.Column(db.String(16), nullable=False)
+    started_at = db.Column(db.DateTime, nullable=False)
+    ended_at = db.Column(db.DateTime, nullable=True)
+    note = db.Column(db.Text, nullable=True)
 
 
 class RoomSeedState(db.Model):

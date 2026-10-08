@@ -20,7 +20,7 @@ The shared `_intervals_overlap` helper uses half-open intervals: `start_a < end_
 
 When an occupied Room is reserved, the latest matching rental must exist and the proposed booking cannot overlap its current rental interval. The current rental is identified using the existing occupied Room state and latest rental ordered by `rented_at`, then ID. An occupied Room without a matching rental is rejected safely. Reservation create/edit does not change Room status, state, check-in/out, or any RoomRental row.
 
-`rent_room` now rejects immediate rental intervals that overlap a booked reservation; ending exactly at the reservation start is allowed. `edit_room_rental` applies the same rule to the original rental start and proposed checkout, while keeping current duration and price recalculation. Rejected edits leave rental and Room checkout values unchanged. Early checkout remains unchanged and does not alter reservation rows.
+`rent_room` now rejects immediate rental intervals that overlap a booked reservation; ending exactly at the reservation start is allowed. `edit_room_rental` applies the same rule to the original rental start and proposed checkout, while keeping current duration and price recalculation. Rejected edits leave rental and Room checkout values unchanged. Early checkout preserves reservation rows and rental history, clears the Room check-in/out fields, and moves the room to Dọn dẹp. Each checkout opens a cleaning period in `room_service_logs`; see `docs/20_implementation_room_service_states.md`.
 
 ## Room UI and management
 

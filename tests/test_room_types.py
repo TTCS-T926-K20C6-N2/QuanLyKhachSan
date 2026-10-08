@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from copy import deepcopy
 from html import unescape
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
@@ -1600,6 +1601,24 @@ def test_room_type_transfer_rolls_back_all_rooms_on_database_error(
         assert [room.type for room in rooms] == ["Nguồn rollback", "Nguồn rollback"]
 
 
+def test_home_and_management_room_card_styles_are_scoped():
+    css = (
+        Path(__file__).parents[1]
+        / "src" / "hotel_app" / "static" / "css" / "hotel.css"
+    ).read_text(encoding="utf-8")
+
+    assert ".room-management-grid {" in css
+    assert ".home-room-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }" in css
+    assert ".home-room-card { display: flex; min-height: 195px; flex-direction: column; justify-content: space-between; padding: 18px 18px 16px 20px; }" in css
+    assert ".home-room-card { min-height: 176px; }" in css
+    assert ".home-room-card .room-times { margin-top: auto; }" in css
+    assert "#home-room-list {" not in css
+    assert ".room-management-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }" in css
+    assert "repeat(auto-fit, minmax(min(100%, 320px), 1fr))" not in css
+    assert ".room-list .room-image {" in css
+    assert ".room-list .room-actions {" in css
+
+
 def test_room_cards_stay_on_room_management_page(client):
     assert _login(client).status_code == 302
 
@@ -1610,7 +1629,7 @@ def test_room_cards_stay_on_room_management_page(client):
     assert 'aria-label="Phòng 101, Phòng trống"' in room_management_page
     assert 'aria-label="Phòng 102, Phòng trống"' in room_management_page
     assert 'href="/rooms" aria-current="page"' in room_management_page
-    assert 'class="room-grid"' in room_management_page
+    assert 'class="room-grid room-management-grid"' in room_management_page
     assert "Giờ vào" in room_management_page
     assert "Giờ ra" in room_management_page
     assert room_management_page.count("<dd>—</dd>") == 24
@@ -1692,7 +1711,7 @@ def test_room_delete_rejects_occupied_room(client, app):
     assert response.status_code == 302
     room_management_page = client.get("/rooms").get_data(as_text=True)
     assert 'aria-label="Phòng 102, Đang thuê"' in room_management_page
-    assert "Không thể xóa phòng 102 đang được thuê." in room_management_page
+    assert "Chỉ có thể xóa phòng 102 khi phòng đang trống." in room_management_page
 
 
 def test_room_list_has_update_link_and_edit_form_is_prefilled(client):
@@ -1924,7 +1943,7 @@ def test_room_card_reflects_saved_edit_values(client):
     assert "500,000 VNĐ / đêm" not in card
 
 
-def test_edit_room_can_mark_room_occupied(client):
+def test_edit_room_cannot_mark_room_occupied_without_rental(client, app):
     assert _login(client).status_code == 302
     form_html = client.get("/rooms/102/edit").get_data(as_text=True)
     csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', form_html)
@@ -1937,7 +1956,7 @@ def test_edit_room_can_mark_room_occupied(client):
             "room_number": "102",
             "description": "Phòng đang thuê",
             "price": "650000",
-            "room_type": "1",
+            "room_type": "2",
             "status": "Đang thuê",
             "check_in": "16:30",
             "check_out": "10:30",
@@ -1945,13 +1964,10 @@ def test_edit_room_can_mark_room_occupied(client):
         content_type="multipart/form-data",
     )
 
-    assert response.status_code == 302
-    html = client.get("/rooms").get_data(as_text=True)
-    assert 'aria-label="Phòng 102, Đang thuê"' in html
-    assert "<dd>16:30</dd>" in html
-    assert "<dd>10:30</dd>" in html
-    assert html.count("<dd>—</dd>") == 22
-
+    assert response.status_code == 200
+    with app.app_context():
+        room = db.session.execute(db.select(Room).where(Room.number == "102")).scalar_one()
+        assert (room.status, room.state, room.check_in, room.check_out) == ("Phòng trống", "empty", None, None)
 
 def test_existing_database_rented_rooms_keep_rented_status(client, app):
     assert _login(client).status_code == 302

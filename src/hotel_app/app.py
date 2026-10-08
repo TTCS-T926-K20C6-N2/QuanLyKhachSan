@@ -28,6 +28,7 @@ from .models import (
     Room,
     RoomRental,
     RoomReservation,
+    RoomServiceLog,
     RoomSeedState,
     RoomType,
     RoomTypeSeedState,
@@ -38,6 +39,8 @@ from .models import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CLEANING_BUFFER_MINUTES = 60
+CHECKOUT_CLEANING_LOG_NOTE = "__checkout__"
 INSTANCE_PATH = PROJECT_ROOT / "instance"
 INVALID_CREDENTIAL_MESSAGE = "Email hoặc mật khẩu không đúng"
 REGISTER_SUCCESS_MESSAGE = "Tạo tài khoản thành công. Vui lòng đăng nhập."
@@ -237,6 +240,21 @@ def _intervals_overlap(start_a: datetime, end_a: datetime, start_b: datetime, en
     return start_a < end_b and end_a > start_b
 
 
+def intervals_conflict_with_cleaning_buffer(
+    start_a: datetime,
+    end_a: datetime,
+    start_b: datetime,
+    end_b: datetime,
+    buffer_minutes: int = CLEANING_BUFFER_MINUTES,
+) -> bool:
+    """Return whether two stays overlap or leave less than the required gap."""
+
+    buffer = timedelta(minutes=buffer_minutes)
+    compatible_a_before_b = end_a + buffer <= start_b
+    compatible_b_before_a = end_b + buffer <= start_a
+    return not (compatible_a_before_b or compatible_b_before_a)
+
+
 def _valid_vietnamese_phone(value: str) -> bool:
     digits_only = re.sub(r"\D", "", value)
     return bool(re.fullmatch(r"(?:0(?:3|5|7|8|9)\d{8}|84\d{9})", digits_only))
@@ -427,25 +445,76 @@ def _migrate_legacy_room_session() -> None:
     session.pop("room_floors", None)
 
 
-ROOM_STATUS_ORDER = ("Phòng trống", "Đang thuê")
+ROOM_STATUS_TO_STATE = {
+    "Phòng trống": "empty",
+    "Đang thuê": "occupied",
+    "Dọn dẹp": "cleaning",
+    "Bảo trì": "maintenance",
+}
+ROOM_STATE_TO_STATUS = {state: status for status, state in ROOM_STATUS_TO_STATE.items()}
+ROOM_STATUS_ORDER = tuple(ROOM_STATUS_TO_STATE)
+ROOM_FILTER_TO_STATE = {"empty": "empty", "occupied": "occupied", "cleaning": "cleaning", "maintenance": "maintenance"}
 
 
 def _room_status_counts(rooms: list[Room]) -> dict[str, int]:
-    counts: dict[str, int] = {}
+    counts = {status: 0 for status in ROOM_STATUS_ORDER}
     for room in rooms:
-        status = (room.status or "").strip()
-        if not status:
-            continue
-        counts[status] = counts.get(status, 0) + 1
+        if ROOM_STATUS_TO_STATE.get(room.status) == room.state:
+            counts[room.status] += 1
+    return counts
 
-    ordered_counts: dict[str, int] = {}
-    for status in ROOM_STATUS_ORDER:
-        if status in counts:
-            ordered_counts[status] = counts[status]
-    for status, count in counts.items():
-        if status not in ordered_counts:
-            ordered_counts[status] = count
-    return ordered_counts
+
+def active_room_service_logs(room_id: int) -> list[RoomServiceLog]:
+    return db.session.execute(
+        db.select(RoomServiceLog)
+        .where(RoomServiceLog.room_id == room_id, RoomServiceLog.ended_at.is_(None))
+        .order_by(RoomServiceLog.started_at, RoomServiceLog.id)
+        .limit(2)
+    ).scalars().all()
+
+
+def room_service_state_is_valid(room: Room) -> bool:
+    active = active_room_service_logs(room.id)
+    expected_type = {"cleaning": "cleaning", "maintenance": "maintenance"}.get(room.state)
+    if expected_type is None:
+        return not active
+    return len(active) == 1 and active[0].service_type == expected_type
+
+
+def start_room_service(
+    room: Room,
+    service_type: str,
+    *,
+    note: str | None = None,
+    started_at: datetime | None = None,
+) -> RoomServiceLog:
+    if service_type not in {"cleaning", "maintenance"}:
+        raise ValueError("Invalid room service type")
+    if active_room_service_logs(room.id):
+        raise ValueError("A room service period is already active")
+    log = RoomServiceLog(
+        room_id=room.id,
+        room_number=room.number,
+        service_type=service_type,
+        started_at=started_at or datetime.now().replace(second=0, microsecond=0),
+        ended_at=None,
+        note=(note or "").strip() or None,
+    )
+    db.session.add(log)
+    return log
+
+
+def close_active_room_service(
+    room: Room,
+    expected_type: str,
+    *,
+    ended_at: datetime | None = None,
+) -> RoomServiceLog:
+    active = active_room_service_logs(room.id)
+    if len(active) != 1 or active[0].service_type != expected_type:
+        raise ValueError("The active room service period is missing or inconsistent")
+    active[0].ended_at = ended_at or datetime.now().replace(second=0, microsecond=0)
+    return active[0]
 
 
 def _rooms_for_management() -> list[Room]:
@@ -521,7 +590,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             ).order_by(RoomReservation.reserved_from, RoomReservation.id)
         ).scalars().all()
 
-    def overlapping_booked_reservations(
+    def booked_reservations_conflicting_with_cleaning_buffer(
         room_id: int, start: datetime, end: datetime, *, exclude_id: int | None = None
     ) -> list[RoomReservation]:
         statement = db.select(RoomReservation).where(
@@ -531,15 +600,76 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if exclude_id is not None:
             statement = statement.where(RoomReservation.id != exclude_id)
         candidates = db.session.execute(
-            statement.order_by(RoomReservation.reserved_from)
+            statement.order_by(RoomReservation.reserved_from, RoomReservation.id)
         ).scalars().all()
         return [
             reservation
             for reservation in candidates
-            if _intervals_overlap(
+            if intervals_conflict_with_cleaning_buffer(
                 start, end, reservation.reserved_from, reservation.reserved_until
             )
         ]
+
+    def next_effective_booked_reservation(
+        room_id: int, after_at: datetime
+    ) -> RoomReservation | None:
+        return db.session.execute(
+            db.select(RoomReservation)
+            .where(
+                RoomReservation.room_id == room_id,
+                RoomReservation.status == "booked",
+                RoomReservation.reserved_until > after_at,
+            )
+            .order_by(RoomReservation.reserved_from, RoomReservation.id)
+            .limit(1)
+        ).scalar_one_or_none()
+
+    def ready_after_recent_checkout(room: Room) -> datetime | None:
+        checkout_log = db.session.execute(
+            db.select(RoomServiceLog)
+            .where(
+                RoomServiceLog.room_id == room.id,
+                RoomServiceLog.service_type == "cleaning",
+                RoomServiceLog.note == CHECKOUT_CLEANING_LOG_NOTE,
+            )
+            .order_by(RoomServiceLog.started_at.desc(), RoomServiceLog.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if checkout_log is None:
+            latest_rental = db.session.execute(
+                db.select(RoomRental)
+                .where(RoomRental.room_id == room.id)
+                .order_by(RoomRental.rented_at.desc(), RoomRental.id.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if latest_rental is None:
+                return None
+            checkout_log = db.session.execute(
+                db.select(RoomServiceLog)
+                .where(
+                    RoomServiceLog.room_id == room.id,
+                    RoomServiceLog.service_type == "cleaning",
+                    RoomServiceLog.started_at >= latest_rental.rented_at,
+                )
+                .order_by(RoomServiceLog.started_at.desc(), RoomServiceLog.id.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if checkout_log is None:
+                if latest_rental.expected_checkout <= datetime.now().replace(second=0, microsecond=0):
+                    return latest_rental.expected_checkout + timedelta(minutes=CLEANING_BUFFER_MINUTES)
+                return None
+        buffer_ready_at = checkout_log.started_at + timedelta(minutes=CLEANING_BUFFER_MINUTES)
+        latest_service_end = db.session.execute(
+            db.select(RoomServiceLog.ended_at)
+            .where(
+                RoomServiceLog.room_id == room.id,
+                RoomServiceLog.started_at >= checkout_log.started_at,
+                RoomServiceLog.ended_at.is_not(None),
+            )
+            .order_by(RoomServiceLog.ended_at.desc(), RoomServiceLog.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        return max(buffer_ready_at, latest_service_end or checkout_log.started_at)
 
     def validate_reservation_form(
         room: Room, *, exclude_reservation_id: int | None = None
@@ -584,17 +714,33 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     active_rental = latest_room_rental(room)
                     if active_rental is None:
                         service_error = "Không thể xác định lượt thuê hiện tại của phòng."
-                    elif _intervals_overlap(
+                    elif intervals_conflict_with_cleaning_buffer(
                         reserved_from, reserved_until,
                         active_rental.rented_at, active_rental.expected_checkout,
                     ):
-                        errors["reserved_from"] = "Thời gian đặt trước bị trùng với lượt thuê hiện tại."
-                elif not (room.status == "Phòng trống" and room.state == "empty"):
+                        errors["reserved_from"] = f"Phải chừa tối thiểu {CLEANING_BUFFER_MINUTES} phút để dọn dẹp giữa hai lượt khách."
+                elif room.status == "Phòng trống" and room.state == "empty":
+                    pass
+                elif exclude_reservation_id is not None and (
+                    (room.status == "Dọn dẹp" and room.state == "cleaning")
+                    or (room.status == "Bảo trì" and room.state == "maintenance")
+                ):
+                    # Existing bookings may still be edited or cancelled while the room is serviced.
+                    pass
+                elif room.status == "Dọn dẹp" and room.state == "cleaning":
+                    service_error = "Không thể đặt trước khi phòng đang dọn dẹp."
+                elif room.status == "Bảo trì" and room.state == "maintenance":
+                    service_error = "Không thể đặt trước khi phòng đang bảo trì."
+                else:
                     service_error = "Trạng thái phòng không hợp lệ để đặt trước."
-                if not errors and service_error is None and overlapping_booked_reservations(
+                if not errors and service_error is None and room.state == "empty":
+                    ready_at = ready_after_recent_checkout(room)
+                    if ready_at is not None and reserved_from < ready_at:
+                        errors["reserved_from"] = f"Phải chừa tối thiểu {CLEANING_BUFFER_MINUTES} phút để dọn dẹp giữa hai lượt khách."
+                if not errors and service_error is None and booked_reservations_conflicting_with_cleaning_buffer(
                     room.id, reserved_from, reserved_until, exclude_id=exclude_reservation_id
                 ):
-                    errors["reserved_from"] = "Thời gian đặt trước bị trùng với lịch đặt khác."
+                    errors["reserved_from"] = f"Phải chừa tối thiểu {CLEANING_BUFFER_MINUTES} phút để dọn dẹp giữa hai lượt khách."
 
         price = _room_display_values(room)["price"]
         if price <= 0:
@@ -1016,14 +1162,14 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         all_rooms = _rooms_for_management()
         room_status_counts = _room_status_counts(all_rooms)
         room_count = len(all_rooms)
-        status_by_filter = {"empty": "Phòng trống", "occupied": "Đang thuê"}
-        selected_status = status_by_filter.get(room_status_filter)
-        rooms = [room for room in all_rooms if room.status == selected_status] if selected_status else all_rooms
+        selected_state = ROOM_FILTER_TO_STATE.get(room_status_filter)
+        rooms = [room for room in all_rooms if room.state == selected_state and ROOM_STATE_TO_STATUS.get(selected_state) == room.status] if selected_state else all_rooms
         room_display_values = {room.id: _room_display_values(room) for room in rooms}
         room_ids = [room.id for room in rooms]
         active_room_rentals = {}
         room_reservations_by_room: dict[int, list[RoomReservation]] = {}
         next_room_reservations: dict[int, RoomReservation] = {}
+        maintenance_reservation_counts: dict[int, int] = {}
         schedule_now = datetime.now().replace(second=0, microsecond=0)
         if room_ids:
             rentals = db.session.execute(
@@ -1042,6 +1188,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 room_reservations_by_room.setdefault(reservation.room_id, []).append(reservation)
                 if reservation.reserved_from >= schedule_now:
                     next_room_reservations.setdefault(reservation.room_id, reservation)
+                if reservation.reserved_until > schedule_now:
+                    maintenance_reservation_counts[reservation.room_id] = maintenance_reservation_counts.get(reservation.room_id, 0) + 1
         context = {
             "errors": {}, "room_number": "", "description": "", "price": "",
             "selected_types": [], "room_types": room_type_options(),
@@ -1049,10 +1197,13 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             "rent_modal_room": None, "rent_modal_open": False,
             "rental_started_at": None, "rental_checkout_value": "",
             "rental_error": None, "rental_edit_mode": False,
-            "rental_min_checkout": None,
+            "rental_min_checkout": None, "rental_min_checkout_input": None, "rental_max_checkout": None,
+            "rental_nightly_rate": None, "rental_next_reservation": None,
             "reservation_modal_room": None, "reservation_modal_open": False,
             "reservation_modal_error": None, "reservation_errors": {},
             "reservation_form": {"guest_name": "", "guest_phone": "", "reserved_from": "", "reserved_until": ""},
+            "cleaning_buffer_minutes": CLEANING_BUFFER_MINUTES,
+            "rental_ready_at": None,
             "reservation_edit_mode": False, "reservation_modal_record": None,
         }
         context.update(form_context)
@@ -1062,6 +1213,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             active_room_rentals=active_room_rentals,
             room_reservations_by_room=room_reservations_by_room,
             next_room_reservations=next_room_reservations,
+            maintenance_reservation_counts=maintenance_reservation_counts,
             room_count=len(rooms), all_room_count=room_count,
             room_status_filter=room_status_filter,
             room_status_counts=room_status_counts, **context,
@@ -1073,7 +1225,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if user is None:
             return redirect(url_for("login"))
         room_status_filter = request.args.get("status", "all")
-        if room_status_filter not in {"all", "empty", "occupied"}:
+        if room_status_filter not in {"all", *ROOM_FILTER_TO_STATE}:
             room_status_filter = "all"
         return render_room_management(user, room_status_filter=room_status_filter)
 
@@ -1087,6 +1239,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         ).scalar_one_or_none()
         if room is None:
             flash("Không tìm thấy phòng cần đặt trước.", "error")
+            return redirect(url_for("room_management"))
+        if room.state == "cleaning" and room.status == "Dọn dẹp":
+            flash("Không thể đặt trước khi phòng đang dọn dẹp.", "error")
+            return redirect(url_for("room_management"))
+        if room.state == "maintenance" and room.status == "Bảo trì":
+            flash("Không thể đặt trước khi phòng đang bảo trì.", "error")
             return redirect(url_for("room_management"))
         if request.method == "GET":
             return render_room_management(
@@ -1211,15 +1369,30 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return redirect(url_for("room_management"))
 
         started_at = datetime.now().replace(second=0, microsecond=0)
+        next_reservation = next_effective_booked_reservation(room.id, started_at)
+        rental_max_checkout = (
+            next_reservation.reserved_from - timedelta(minutes=CLEANING_BUFFER_MINUTES)
+            if next_reservation else None
+        )
+        rental_ready_at = ready_after_recent_checkout(room)
+        initial_checkout_value = (
+            rental_max_checkout.strftime("%Y-%m-%dT%H:%M")
+            if rental_max_checkout is not None and rental_max_checkout > started_at
+            else ""
+        )
         if request.method == "GET":
-            if room.status != "Phòng trống" or room.state != "empty":
-                flash(f"Phòng {room.number} hiện không còn trống.", "error")
+            if room.status != "Phòng trống" or room.state != "empty" or not room_service_state_is_valid(room):
+                flash(f"Phòng {room.number} hiện không còn sẵn sàng để thuê.", "error")
                 return redirect(url_for("room_management"))
             return render_room_management(
                 user,
                 rent_modal_room=room,
                 rent_modal_open=True,
                 rental_started_at=started_at,
+                rental_checkout_value=initial_checkout_value,
+                rental_next_reservation=next_reservation,
+                rental_max_checkout=rental_max_checkout,
+                rental_ready_at=rental_ready_at,
             )
 
         rental_error = None
@@ -1235,16 +1408,27 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             expected_checkout = None
             rental_error = "Vui lòng chọn thời gian trả phòng hợp lệ."
 
-        if room.status != "Phòng trống" or room.state != "empty":
-            rental_error = f"Phòng {room.number} hiện không còn trống."
+        if room.status != "Phòng trống" or room.state != "empty" or not room_service_state_is_valid(room):
+            rental_error = f"Phòng {room.number} hiện không còn sẵn sàng để thuê."
         elif price_per_night <= 0:
             rental_error = "Phòng chưa có giá thuê hợp lệ, không thể cho thuê."
+        elif rental_ready_at is not None and started_at < rental_ready_at:
+            rental_error = (
+                f"Phòng chỉ sẵn sàng cho thuê từ {rental_ready_at.strftime('%H:%M')}; "
+                f"cần chừa tối thiểu {CLEANING_BUFFER_MINUTES} phút sau lượt trước."
+            )
+        elif rental_max_checkout is not None and rental_max_checkout <= started_at:
+            rental_error = "Không còn thời gian thuê hợp lệ trước lịch đặt tiếp theo."
         elif expected_checkout is not None and expected_checkout <= started_at:
             rental_error = "Thời gian trả phòng phải sau thời gian bắt đầu thuê."
-        elif expected_checkout is not None and overlapping_booked_reservations(
+        elif expected_checkout is not None and booked_reservations_conflicting_with_cleaning_buffer(
             room.id, started_at, expected_checkout
         ):
-            rental_error = "Thời gian thuê bị trùng với lịch đặt trước của phòng."
+            rental_error = (
+                f"Giờ trả phải chừa tối thiểu {CLEANING_BUFFER_MINUTES} phút trước lịch đặt tiếp theo."
+                if next_reservation is not None
+                else f"Phải chừa tối thiểu {CLEANING_BUFFER_MINUTES} phút để dọn dẹp giữa hai lượt khách."
+            )
 
         if rental_error is None and expected_checkout is not None:
             duration_minutes = int(
@@ -1278,6 +1462,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     rental_started_at=started_at,
                     rental_checkout_value=checkout_value,
                     rental_error="Không thể lưu lượt thuê phòng. Vui lòng thử lại.",
+                    rental_max_checkout=rental_max_checkout,
+                    rental_next_reservation=next_reservation,
+                    rental_ready_at=rental_ready_at,
                 ), 503
 
             flash(
@@ -1294,6 +1481,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             rental_started_at=started_at,
             rental_checkout_value=checkout_value,
             rental_error=rental_error,
+            rental_max_checkout=rental_max_checkout,
+            rental_next_reservation=next_reservation,
+            rental_ready_at=rental_ready_at,
         ), 400
 
     @app.route("/rooms/<room_number>/rent/edit", methods=["GET", "POST"])
@@ -1328,6 +1518,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
         now = datetime.now().replace(second=0, microsecond=0)
         min_checkout = max(now, rental.rented_at)
+        next_reservation = next_effective_booked_reservation(room.id, now)
         checkout_value = request.form.get(
             "expected_checkout",
             rental.expected_checkout.strftime("%Y-%m-%dT%H:%M"),
@@ -1356,11 +1547,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             if (
                 rental_error is None
                 and expected_checkout is not None
-                and overlapping_booked_reservations(
+                and booked_reservations_conflicting_with_cleaning_buffer(
                     room.id, rental.rented_at, expected_checkout
                 )
             ):
-                rental_error = "Thời gian thuê bị trùng với lịch đặt trước của phòng."
+                rental_error = f"Giờ trả phải chừa tối thiểu {CLEANING_BUFFER_MINUTES} phút trước lịch đặt tiếp theo."
 
             if rental_error is None and expected_checkout is not None:
                 duration_minutes = int(
@@ -1390,6 +1581,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                         rental_error=rental_error,
                         rental_edit_mode=True,
                         rental_min_checkout=min_checkout,
+                        rental_min_checkout_input=min_checkout + timedelta(minutes=1),
+                        rental_max_checkout=(next_reservation.reserved_from - timedelta(minutes=CLEANING_BUFFER_MINUTES)) if next_reservation else None,
+                        rental_nightly_rate=rental.nightly_rate,
+                        rental_next_reservation=next_reservation,
                     ), 503
 
                 flash(
@@ -1408,6 +1603,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             rental_error=rental_error,
             rental_edit_mode=True,
             rental_min_checkout=min_checkout,
+            rental_min_checkout_input=min_checkout + timedelta(minutes=1),
+            rental_max_checkout=(next_reservation.reserved_from - timedelta(minutes=CLEANING_BUFFER_MINUTES)) if next_reservation else None,
+            rental_nightly_rate=rental.nightly_rate,
+            rental_next_reservation=next_reservation,
         ), 400 if request.method == "POST" else 200
     @app.route("/rooms/<room_number>/checkout", methods=["POST"])
     def checkout_room(room_number: str):
@@ -1429,20 +1628,112 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             flash(f"Phòng {room.number} hiện không được thuê.", "error")
             return redirect(url_for("room_management"))
 
+        if not room_service_state_is_valid(room):
+            flash("Không thể trả phòng vì dữ liệu dịch vụ hiện tại không nhất quán.", "error")
+            return redirect(url_for("room_management"))
+
+        transition_at = datetime.now().replace(second=0, microsecond=0)
         try:
-            room.status = "Phòng trống"
-            room.state = "empty"
+            room.status = "Dọn dẹp"
+            room.state = "cleaning"
             room.check_in = None
             room.check_out = None
+            start_room_service(room, "cleaning", note=CHECKOUT_CLEANING_LOG_NOTE, started_at=transition_at)
             db.session.commit()
         except SQLAlchemyError:
             db.session.rollback()
-            app.logger.exception("Room checkout failed.")
+            app.logger.exception("Room checkout and cleaning start failed.")
             flash("Không thể trả phòng. Vui lòng thử lại.", "error")
             return redirect(url_for("room_management"))
+        except ValueError:
+            db.session.rollback()
+            flash("Không thể bắt đầu dọn dẹp do dữ liệu dịch vụ không nhất quán.", "error")
+            return redirect(url_for("room_management"))
 
-        flash(f"Đã trả phòng {room.number} thành công.", "success")
+        next_reservation = next_effective_booked_reservation(room.id, transition_at)
+        if (
+            next_reservation is not None
+            and next_reservation.reserved_from
+            < transition_at + timedelta(minutes=CLEANING_BUFFER_MINUTES)
+        ):
+            flash(
+                f"Lịch đặt tiếp theo không còn đủ {CLEANING_BUFFER_MINUTES} phút để dọn dẹp tiêu chuẩn.",
+                "warning",
+            )
+        flash(f"Đã trả phòng {room.number}; phòng đang chờ dọn dẹp.", "success")
         return redirect(url_for("room_management"))
+
+    def complete_room_service_transition(
+        room_number: str,
+        *,
+        current_status: str,
+        current_state: str,
+        service_type: str,
+        next_status: str,
+        next_state: str,
+        next_service_type: str | None = None,
+        success_message: str,
+    ):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+        normalized_number = str(room_number).strip()
+        room = db.session.execute(
+            db.select(Room).where(Room.number == normalized_number)
+        ).scalar_one_or_none()
+        if room is None:
+            flash(f"Không tìm thấy phòng {normalized_number}.", "error")
+            return redirect(url_for("room_management"))
+        if (room.status, room.state) != (current_status, current_state):
+            flash("Trạng thái phòng đã thay đổi hoặc không hợp lệ. Vui lòng tải lại.", "error")
+            return redirect(url_for("room_management"))
+        transition_at = datetime.now().replace(second=0, microsecond=0)
+        try:
+            close_active_room_service(room, service_type, ended_at=transition_at)
+            if next_service_type:
+                start_room_service(room, next_service_type, started_at=transition_at)
+            room.status = next_status
+            room.state = next_state
+            room.check_in = None
+            room.check_out = None
+            db.session.commit()
+        except ValueError:
+            db.session.rollback()
+            flash("Không thể hoàn tất thao tác vì nhật ký dịch vụ đang thiếu hoặc không nhất quán.", "error")
+            return redirect(url_for("room_management"))
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.exception("Room service completion failed.")
+            flash("Không thể hoàn tất thao tác. Vui lòng thử lại.", "error")
+            return redirect(url_for("room_management"))
+        flash(success_message.format(room_number=room.number), "success")
+        return redirect(url_for("room_management"))
+
+    @app.route("/rooms/<room_number>/cleaning/complete", methods=["POST"])
+    def complete_room_cleaning(room_number: str):
+        return complete_room_service_transition(
+            room_number,
+            current_status="Dọn dẹp",
+            current_state="cleaning",
+            service_type="cleaning",
+            next_status="Phòng trống",
+            next_state="empty",
+            success_message="Đã hoàn tất dọn dẹp phòng {room_number}.",
+        )
+
+    @app.route("/rooms/<room_number>/maintenance/complete", methods=["POST"])
+    def complete_room_maintenance(room_number: str):
+        return complete_room_service_transition(
+            room_number,
+            current_status="Bảo trì",
+            current_state="maintenance",
+            service_type="maintenance",
+            next_status="Dọn dẹp",
+            next_state="cleaning",
+            next_service_type="cleaning",
+            success_message="Đã hoàn tất bảo trì phòng {room_number}; phòng cần được dọn dẹp.",
+        )
+
     @app.route("/rooms/new", methods=["GET", "POST"])
     def create_room():
         user = current_user()
@@ -1622,7 +1913,20 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if room is None:
             flash(f"Không tìm thấy phòng {normalized_number}.", "error")
             return redirect(url_for("room_management"))
+        if room.state == "occupied" or room.status == "Đang thuê":
+            flash("Phòng đang được thuê; vui lòng trả phòng trước khi cập nhật.", "error")
+            return redirect(url_for("room_management"))
+        if ROOM_STATUS_TO_STATE.get(room.status) != room.state:
+            flash("Trạng thái phòng không nhất quán; không thể cập nhật.", "error")
+            return redirect(url_for("room_management"))
 
+        current_state = room.state
+        status_options_by_state = {
+            "empty": [("Phòng trống", "Giữ Phòng trống"), ("Bảo trì", "Chuyển sang Bảo trì")],
+            "cleaning": [("Dọn dẹp", "Giữ Dọn dẹp"), ("Bảo trì", "Chuyển sang Bảo trì")],
+            "maintenance": [("Bảo trì", "Bảo trì")],
+        }
+        room_status_options = status_options_by_state[current_state]
         errors: dict[str, str] = {}
         room_number_input = request.form.get("room_number", room.number).strip()
         description = request.form.get("description", room.description).strip()
@@ -1630,8 +1934,18 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         check_in = request.form.get("check_in", room.check_in or "").strip()
         check_out = request.form.get("check_out", room.check_out or "").strip()
         room_status = request.form.get("status", room.status).strip()
+        maintenance_note = request.form.get("maintenance_note", "").strip()
         selected_types = request.form.getlist("room_type")
         available_room_types = room_type_options()
+        current_time = datetime.now().replace(second=0, microsecond=0)
+        maintenance_reservation_count = len(db.session.execute(
+            db.select(RoomReservation.id).where(
+                RoomReservation.room_id == room.id,
+                RoomReservation.status == "booked",
+                RoomReservation.reserved_until > current_time,
+            )
+        ).scalars().all())
+
         if request.method == "GET":
             selected_types = [
                 code
@@ -1671,8 +1985,17 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             if len(selected_types) != 1 or selected_types[0] not in available_room_types:
                 errors["room_type"] = "Vui lòng chọn đúng một thể loại phòng."
 
-            if room_status not in {"Phòng trống", "Đang thuê"}:
-                errors["status"] = "Vui lòng chọn trạng thái phòng hợp lệ."
+            allowed_statuses = {
+                "empty": {"Phòng trống", "Bảo trì"},
+                "cleaning": {"Dọn dẹp", "Bảo trì"},
+                "maintenance": {"Bảo trì"},
+            }[current_state]
+            if room_status not in allowed_statuses:
+                errors["status"] = "Trạng thái không hợp lệ với trạng thái phòng hiện tại."
+            if not room_service_state_is_valid(room):
+                errors["status"] = "Nhật ký dịch vụ hiện tại bị thiếu hoặc không nhất quán."
+            if len(maintenance_note) > 500:
+                errors["maintenance_note"] = "Lý do bảo trì không được vượt quá 500 ký tự."
 
             try:
                 price = int(price_input)
@@ -1711,6 +2034,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 new_image_path = None
                 service_error = None
                 service_status = 200
+                starts_maintenance = room_status == "Bảo trì" and current_state != "maintenance"
+                transition_at = datetime.now().replace(second=0, microsecond=0) if starts_maintenance else None
                 try:
                     if has_new_image:
                         upload_folder = Path(app.config["ROOM_UPLOAD_FOLDER"])
@@ -1724,16 +2049,41 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     room.type = available_room_types[selected_types[0]]
                     room.description = description
                     room.price = price
+
+                    if starts_maintenance:
+                        if current_state == "cleaning":
+                            close_active_room_service(room, "cleaning", ended_at=transition_at)
+                        start_room_service(
+                            room,
+                            "maintenance",
+                            note=maintenance_note,
+                            started_at=transition_at,
+                        )
+                        room.check_in = None
+                        room.check_out = None
+                    elif current_state in {"cleaning", "maintenance"}:
+                        room.check_in = None
+                        room.check_out = None
+
                     room.status = room_status
-                    room.state = "occupied" if room_status == "Đang thuê" else "empty"
-                    room.check_in = check_in or None
-                    room.check_out = check_out or None
+                    room.state = ROOM_STATUS_TO_STATE[room_status]
+                    if current_state == "empty" and room_status == "Phòng trống":
+                        room.check_in = check_in or None
+                        room.check_out = check_out or None
                     db.session.commit()
+                except ValueError as error:
+                    db.session.rollback()
+                    if new_image_path is not None:
+                        new_image_path.unlink(missing_ok=True)
+                    errors["status"] = "Không thể đổi trạng thái do nhật ký dịch vụ đã thay đổi. Vui lòng tải lại."
                 except IntegrityError:
                     db.session.rollback()
                     if new_image_path is not None:
                         new_image_path.unlink(missing_ok=True)
-                    errors["room_number"] = "Mã phòng đã tồn tại."
+                    if starts_maintenance:
+                        errors["status"] = "Phòng đã có nhật ký dịch vụ đang hoạt động. Vui lòng tải lại."
+                    else:
+                        errors["room_number"] = "Mã phòng đã tồn tại."
                 except SQLAlchemyError:
                     db.session.rollback()
                     if new_image_path is not None:
@@ -1754,6 +2104,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                             missing_ok=True
                         )
                     flash(f"Đã cập nhật phòng {room_number_input}.", "success")
+                    if starts_maintenance and maintenance_reservation_count:
+                        flash(
+                            f"Phòng này đang có {maintenance_reservation_count} lịch đặt trước đang hiệu lực.",
+                            "warning",
+                        )
                     return redirect(url_for("room_management"))
 
         return render_template(
@@ -1768,6 +2123,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             selected_types=selected_types,
             status=room_status,
             room_types=available_room_types,
+            room_status_options=room_status_options,
+            maintenance_note=maintenance_note,
+            maintenance_reservation_count=maintenance_reservation_count,
             update_mode=True,
             edit_room_number=normalized_number,
             current_image=room.image,
@@ -1794,11 +2152,14 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             flash(f"Không tìm thấy phòng {normalized_number}.", "error")
             return redirect(url_for("room_management"))
 
-        if room.status == "Đang thuê" or room.state == "occupied":
+        if (room.status, room.state) != ("Phòng trống", "empty"):
             flash(
-                f"Không thể xóa phòng {normalized_number} đang được thuê.",
+                f"Chỉ có thể xóa phòng {normalized_number} khi phòng đang trống.",
                 "error",
             )
+            return redirect(url_for("room_management"))
+        if active_room_service_logs(room.id):
+            flash(f"Không thể xóa phòng {normalized_number} khi còn dịch vụ đang hoạt động.", "error")
             return redirect(url_for("room_management"))
 
         booked_reservation = db.session.execute(
@@ -1824,6 +2185,16 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             ).scalars().all()
             for reservation in historical_reservations:
                 reservation.room_id = None
+            historical_rentals = db.session.execute(
+                db.select(RoomRental).where(RoomRental.room_id == room.id)
+            ).scalars().all()
+            for rental in historical_rentals:
+                rental.room_id = None
+            historical_service_logs = db.session.execute(
+                db.select(RoomServiceLog).where(RoomServiceLog.room_id == room.id)
+            ).scalars().all()
+            for service_log in historical_service_logs:
+                service_log.room_id = None
             db.session.delete(room)
             db.session.commit()
         except SQLAlchemyError:
