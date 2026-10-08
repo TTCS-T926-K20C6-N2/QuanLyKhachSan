@@ -1037,6 +1037,7 @@ def test_unified_room_type_update_only_transfers_when_target_is_selected(
             "csrf_token": csrf_token.group(1),
             "name": "Nguồn chỉ chuyển",
             "target_room_type_id": str(target_id),
+            "selected_room_ids": [str(room_id)],
         },
     )
 
@@ -1126,6 +1127,7 @@ def test_unified_room_type_update_renames_and_transfers_original_rooms_atomicall
             "csrf_token": csrf_token.group(1),
             "name": "Nguồn đã đổi tên",
             "target_room_type_id": str(target_id),
+            "selected_room_ids": [str(room_id) for room_id in source_room_ids],
         },
     )
     with app.app_context():
@@ -1191,6 +1193,7 @@ def test_unified_room_type_update_rejects_invalid_target_ids(
             "csrf_token": csrf_token.group(1),
             "name": "Tên người dùng nhập",
             "target_room_type_id": target_value,
+            "selected_room_ids": [str(room_id)],
         },
     )
 
@@ -1228,6 +1231,7 @@ def test_unified_room_type_update_rolls_back_rename_and_transfer_together(
             "csrf_token": csrf_token.group(1),
             "name": "Tên sau rollback",
             "target_room_type_id": str(target_id),
+            "selected_room_ids": [str(room_id)],
         },
     )
 
@@ -1315,6 +1319,7 @@ def test_room_type_transfer_moves_rooms_and_preserves_other_room_fields(
         data={
             "csrf_token": csrf_token.group(1),
             "target_room_type_id": str(target_id),
+            "selected_room_ids": [str(room_id) for room_id in source_room_ids],
         },
     )
 
@@ -1349,6 +1354,107 @@ def test_room_type_transfer_moves_rooms_and_preserves_other_room_fields(
     assert '<p class="room-type">Nguồn tùy chỉnh</p>' not in management_html
 
 
+
+
+def test_room_type_edit_modal_exposes_selective_controls_and_room_data(client, app):
+    assert _login(client).status_code == 302
+    source_id = _add_test_room_type(app, "UI source")
+    _add_test_room(app, "UI-ROOM-1", "UI source", status="Đang thuê", state="occupied")
+    html = client.get("/room-types").get_data(as_text=True)
+    assert "Chuyển phòng sang thể loại khác" in html
+    assert "Chọn tất cả" in html
+    assert "Đã chọn 0 / 0 phòng" in html
+    assert "Không có phòng để chuyển." in html
+    assert "selected_room_ids" in html
+    assert '"number": "UI-ROOM-1"' in html
+    assert '"status":' in html
+    assert '"occupied": true' in html
+    assert f'"{source_id}": [' in html
+
+
+def test_selective_transfer_moves_only_selected_and_preserves_rental(client, app):
+    assert _login(client).status_code == 302
+    source_id = _add_test_room_type(app, "Selective source")
+    target_id = _add_test_room_type(app, "Selective target")
+    room_ids = [
+        _add_test_room(app, "SEL-1", "Selective source"),
+        _add_test_room(app, "SEL-2", "Selective source", status="Đang thuê", state="occupied", check_in="14:00", check_out="12:00"),
+        _add_test_room(app, "SEL-3", "Selective source"),
+    ]
+    with app.app_context():
+        rental = RoomRental(room_id=room_ids[1], room_number="SEL-2", rented_at=datetime(2026, 1, 1), expected_checkout=datetime(2026, 1, 3), duration_minutes=2880, nightly_rate=825000, total_price=1650000)
+        db.session.add(rental)
+        db.session.commit()
+        rental_id = rental.id
+        rental_before = (rental.room_id, rental.room_number, rental.rented_at, rental.expected_checkout, rental.total_price)
+    html = client.get("/room-types").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    response = client.post(f"/room-types/{source_id}/edit", data={"csrf_token": token, "name": "Selective source", "target_room_type_id": str(target_id), "selected_room_ids": [str(room_ids[0]), str(room_ids[1])]})
+    assert response.status_code == 302
+    with app.app_context():
+        assert [db.session.get(Room, rid).type for rid in room_ids] == ["Selective target", "Selective target", "Selective source"]
+        occupied = db.session.get(Room, room_ids[1])
+        assert (occupied.status, occupied.state, occupied.check_in, occupied.check_out) == ("Đang thuê", "occupied", "14:00", "12:00")
+        rental = db.session.get(RoomRental, rental_id)
+        assert (rental.room_id, rental.room_number, rental.rented_at, rental.expected_checkout, rental.total_price) == rental_before
+
+
+def test_zero_selection_rename_only_updates_source_rooms(client, app):
+    assert _login(client).status_code == 302
+    source_id = _add_test_room_type(app, "Rename source")
+    room_ids = [_add_test_room(app, "REN-1", "Rename source"), _add_test_room(app, "REN-2", " rename source ")]
+    html = client.get("/room-types").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    response = client.post(f"/room-types/{source_id}/edit", data={"csrf_token": token, "name": "Renamed source"})
+    assert response.status_code == 302
+    with app.app_context():
+        assert db.session.get(RoomType, source_id).name == "Renamed source"
+        assert [db.session.get(Room, rid).type for rid in room_ids] == ["Renamed source", "Renamed source"]
+
+
+def test_zero_selection_with_target_does_not_transfer(client, app):
+    assert _login(client).status_code == 302
+    source_id = _add_test_room_type(app, "No selection source")
+    target_id = _add_test_room_type(app, "No selection target")
+    room_id = _add_test_room(app, "SEL-NONE", "No selection source")
+    html = client.get("/room-types").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    response = client.post(f"/room-types/{source_id}/edit", data={"csrf_token": token, "name": "No selection source", "target_room_type_id": str(target_id)})
+    assert response.status_code == 302
+    with app.app_context():
+        assert db.session.get(Room, room_id).type == "No selection source"
+
+
+@pytest.mark.parametrize("submitted", [["bad"], ["999999"], ["1", "-1"]])
+def test_selective_transfer_rejects_invalid_ids(client, app, submitted):
+    assert _login(client).status_code == 302
+    source_id = _add_test_room_type(app, "ID source")
+    target_id = _add_test_room_type(app, "ID target")
+    source_room = _add_test_room(app, "ID-VALID", "ID source")
+    other_type = _add_test_room_type(app, "ID foreign type")
+    foreign_room = _add_test_room(app, "ID-FOREIGN", "ID foreign type")
+    selected = [str(source_room), str(foreign_room)] if len(submitted) == 2 else submitted
+    html = client.get("/room-types").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    response = client.post(f"/room-types/{source_id}/edit", data={"csrf_token": token, "name": "ID source", "target_room_type_id": str(target_id), "selected_room_ids": selected})
+    assert response.status_code == 200
+    assert "không hợp lệ" in response.get_data(as_text=True) or "không còn thuộc" in response.get_data(as_text=True)
+    with app.app_context():
+        assert db.session.get(Room, source_room).type == "ID source"
+        assert db.session.get(Room, foreign_room).type == "ID foreign type"
+
+
+def test_duplicate_selected_ids_transfer_once(client, app):
+    assert _login(client).status_code == 302
+    source_id = _add_test_room_type(app, "Duplicate source")
+    target_id = _add_test_room_type(app, "Duplicate target")
+    room_id = _add_test_room(app, "DUP-SEL", "Duplicate source")
+    html = client.get("/room-types").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    response = client.post(f"/room-types/{source_id}/transfer", data={"csrf_token": token, "target_room_type_id": str(target_id), "selected_room_ids": [str(room_id), str(room_id)]})
+    assert response.status_code == 302
+    with app.app_context():
+        assert db.session.get(Room, room_id).type == "Duplicate target"
 @pytest.mark.parametrize(
     ("target_value", "message"),
     [
@@ -1384,6 +1490,7 @@ def test_room_type_transfer_rejects_invalid_targets_and_keeps_dialog_open(
         data={
             "csrf_token": csrf_token.group(1),
             "target_room_type_id": target_value,
+            "selected_room_ids": [str(room_id)],
         },
     )
     html = response.get_data(as_text=True)
@@ -1412,9 +1519,8 @@ def test_room_type_transfer_rejects_empty_source_and_missing_source(client, app)
             "target_room_type_id": str(target_id),
         },
     )
-    assert response.status_code == 200
-    assert "Không có phòng thuộc thể loại này để chuyển." in response.get_data(as_text=True)
-    assert "data-open-on-load" in response.get_data(as_text=True)
+    assert response.status_code == 302
+    assert "Không có thay đổi nào được thực hiện." in client.get("/room-types").get_data(as_text=True)
 
     response = client.post(
         "/room-types/999999/transfer",
@@ -1478,6 +1584,7 @@ def test_room_type_transfer_rolls_back_all_rooms_on_database_error(
         data={
             "csrf_token": csrf_token.group(1),
             "target_room_type_id": str(target_id),
+            "selected_room_ids": [str(room_id) for room_id in room_ids],
         },
     )
 

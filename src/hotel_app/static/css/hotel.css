@@ -169,6 +169,23 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-type-edit-footer { display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin: 8px 24px 22px; padding-top: 16px; border-top: 1px solid var(--line); }
 .room-type-edit-footer__buttons { display: flex; align-items: center; gap: 9px; }
 .room-type-transfer-summary { margin: 10px 0 0; color: #52667a; font-size: 0.88rem; }
+.room-type-select-all { display: flex; min-height: 40px; align-items: center; gap: 9px; margin-top: 12px; padding: 7px 10px; border: 1px solid #d8e3ec; border-radius: 7px; background: #f6f9fc; color: #263e55; font-weight: 750; cursor: pointer; }
+.room-type-select-all input,
+.room-type-transfer-row input { width: 17px; height: 17px; margin: 0; accent-color: #1679b5; }
+.room-type-transfer-list { display: grid; max-height: 220px; gap: 5px; margin-top: 7px; padding: 5px; overflow-y: auto; border: 1px solid #dce5ed; border-radius: 7px; }
+.room-type-transfer-row { display: grid; grid-template-columns: 20px minmax(70px, 1fr) minmax(90px, auto); min-height: 38px; align-items: center; gap: 9px; padding: 5px 8px; border-radius: 5px; color: #263e55; cursor: pointer; }
+.room-type-transfer-row:hover { background: #f2f7fb; }
+.room-type-transfer-row:focus-within { outline: 2px solid #7bc1ef; outline-offset: -2px; }
+.room-type-transfer-row__number { font-variant-numeric: tabular-nums; }
+.room-type-transfer-row__status { color: #52667a; font-size: 0.84rem; text-align: right; }
+.room-type-transfer-empty { margin: 10px 0 0; color: #607589; font-size: 0.88rem; }
+.room-type-selection-count { margin: 8px 0 0; color: #344e66; font-size: 0.86rem; font-weight: 750; }
+.room-type-target-field { margin-top: 12px; }
+@media (max-width: 520px) {
+  .room-type-transfer-list { max-height: 190px; }
+  .room-type-transfer-row { grid-template-columns: 20px minmax(55px, 1fr) minmax(80px, auto); gap: 6px; padding-inline: 5px; }
+  .room-type-transfer-row__status { font-size: 0.78rem; }
+}
 .room-type-transfer-warning { margin: 8px 0 0; color: var(--red); font-size: 0.84rem; font-weight: 700; }
 .result-count { display: inline-flex; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--blue-100); color: var(--blue-800); font-size: 0.72rem; font-weight: 800; }
 .room-type-results__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 22px; }

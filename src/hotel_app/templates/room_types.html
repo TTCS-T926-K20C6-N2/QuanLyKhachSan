@@ -78,12 +78,18 @@
         </div>
       </section>
       <section class="room-type-edit-section" aria-labelledby="room-type-transfer-title">
-        <h3 id="room-type-transfer-title">Chuyển toàn bộ phòng</h3>
+        <h3 id="room-type-transfer-title">Chuyển phòng sang thể loại khác</h3>
         <p class="room-type-transfer-summary">Nguồn: <strong id="room-type-source-name"></strong> · <span id="room-type-source-count"></span> phòng</p>
-        <p class="room-type-transfer-warning" id="room-type-occupied-warning" hidden></p>
-        <p class="field-hint" id="room-type-empty-source" hidden>Không có phòng để chuyển.</p>
+        <p class="room-type-transfer-warning" id="room-type-occupied-warning" hidden>Phòng đang thuê sẽ chỉ thay đổi thể loại; trạng thái và thông tin thuê được giữ nguyên.</p>
         {% if transfer_error %}<p class="field-error" role="alert">{{ transfer_error }}</p>{% endif %}
-        <div class="form-field">
+        <label class="room-type-select-all" for="room-type-select-all">
+          <input id="room-type-select-all" type="checkbox">
+          <span>Chọn tất cả</span>
+        </label>
+        <div class="room-type-transfer-list" id="room-type-transfer-list" aria-label="Danh sách phòng thuộc thể loại nguồn"></div>
+        <p class="room-type-transfer-empty" id="room-type-empty-source" hidden>Không có phòng để chuyển.</p>
+        <p class="room-type-selection-count" id="room-type-selection-count" aria-live="polite">Đã chọn 0 / 0 phòng</p>
+        <div class="form-field room-type-target-field">
           <label for="room-type-target">Chuyển sang</label>
           <select id="room-type-target" name="target_room_type_id">
             <option value="">Không chuyển đổi</option>
@@ -101,20 +107,67 @@
   <script>
     const roomTypeEditDialog = document.getElementById("room-type-edit-dialog");
     const roomTypeTargets = {{ room_type_targets|tojson }};
+    const roomTypeRooms = {{ room_type_rooms|tojson }};
+    const roomTypeInitialSelectedIds = {{ (form_values|default({})).get('selected_room_ids', [])|tojson }};
     const roomTypeUpdateForm = document.getElementById("room-type-update-form");
+    const roomTypeNameInput = document.getElementById("room-type-edit-name");
     const roomTypeTargetSelect = document.getElementById("room-type-target");
     const roomTypeSourceName = document.getElementById("room-type-source-name");
     const roomTypeSourceCount = document.getElementById("room-type-source-count");
     const roomTypeOccupiedWarning = document.getElementById("room-type-occupied-warning");
     const roomTypeEmptySource = document.getElementById("room-type-empty-source");
-    function openRoomTypeEditDialog(sourceId, sourceName, roomCount, occupiedCount, targetId = "", restoreValues = false) {
+    const roomTypeTransferList = document.getElementById("room-type-transfer-list");
+    const roomTypeSelectAll = document.getElementById("room-type-select-all");
+    const roomTypeSelectionCount = document.getElementById("room-type-selection-count");
+
+    function selectedRoomCheckboxes() {
+      return [...roomTypeTransferList.querySelectorAll('input[name="selected_room_ids"]')];
+    }
+
+    function updateRoomSelectionState() {
+      const checkboxes = selectedRoomCheckboxes();
+      const selected = checkboxes.filter((checkbox) => checkbox.checked);
+      roomTypeSelectAll.checked = checkboxes.length > 0 && selected.length === checkboxes.length;
+      roomTypeSelectAll.indeterminate = selected.length > 0 && selected.length < checkboxes.length;
+      roomTypeSelectionCount.textContent = `Đã chọn ${selected.length} / ${checkboxes.length} phòng`;
+      roomTypeOccupiedWarning.hidden = !selected.some((checkbox) => checkbox.dataset.occupied === "true");
+      roomTypeTargetSelect.disabled = checkboxes.length === 0 || selected.length === 0;
+      roomTypeTargetSelect.required = selected.length > 0;
+    }
+
+    function renderRoomChoices(rooms, selectedIds = []) {
+      roomTypeTransferList.replaceChildren();
+      const selected = new Set(selectedIds.map(String));
+      rooms.forEach((room) => {
+        const row = document.createElement("label");
+        row.className = "room-type-transfer-row";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.name = "selected_room_ids";
+        checkbox.value = String(room.id);
+        checkbox.dataset.occupied = String(Boolean(room.occupied));
+        checkbox.checked = selected.has(String(room.id));
+        checkbox.addEventListener("change", updateRoomSelectionState);
+        const number = document.createElement("strong");
+        number.className = "room-type-transfer-row__number";
+        number.textContent = room.number;
+        const status = document.createElement("span");
+        status.className = "room-type-transfer-row__status";
+        status.textContent = room.status;
+        row.append(checkbox, number, status);
+        roomTypeTransferList.append(row);
+      });
+      roomTypeEmptySource.hidden = rooms.length > 0;
+      roomTypeSelectAll.disabled = rooms.length === 0;
+      updateRoomSelectionState();
+    }
+
+    function openRoomTypeEditDialog(sourceId, sourceName, targetId = "", restoreValues = false, selectedIds = []) {
       roomTypeUpdateForm.action = `/room-types/${sourceId}/edit`;
-      if (!restoreValues) document.getElementById("room-type-edit-name").value = sourceName;
+      if (!restoreValues) roomTypeNameInput.value = sourceName;
       roomTypeSourceName.textContent = sourceName;
-      roomTypeSourceCount.textContent = roomCount;
-      roomTypeOccupiedWarning.hidden = occupiedCount === 0;
-      roomTypeOccupiedWarning.textContent = `${occupiedCount} phòng đang thuê sẽ giữ nguyên trạng thái và thời gian lưu trú.`;
-      roomTypeEmptySource.hidden = roomCount > 0;
+      const rooms = roomTypeRooms[String(sourceId)] || [];
+      roomTypeSourceCount.textContent = String(rooms.length);
       roomTypeTargetSelect.replaceChildren(new Option("Không chuyển đổi", ""));
       roomTypeTargets.forEach((target) => {
         if (String(target.id) !== String(sourceId)) {
@@ -122,42 +175,55 @@
         }
       });
       roomTypeTargetSelect.value = targetId;
-      roomTypeTargetSelect.disabled = roomCount === 0;
+      renderRoomChoices(rooms, selectedIds);
       roomTypeEditDialog.showModal();
     }
+
     document.addEventListener("click", (event) => {
       const button = event.target.closest(".room-type-edit-trigger");
       if (!button) return;
       openRoomTypeEditDialog(
         button.dataset.sourceId,
         button.dataset.sourceName,
-        Number(button.dataset.roomCount),
-        Number(button.dataset.occupiedCount),
       );
     });
-    roomTypeUpdateForm.addEventListener("submit", (event) => {
-      if (!roomTypeTargetSelect.value) return;
-      const targetName = roomTypeTargetSelect.selectedOptions[0].textContent;
-      const roomCount = Number(roomTypeSourceCount.textContent);
-      const occupiedCount = Number(roomTypeOccupiedWarning.hidden ? 0 : roomTypeOccupiedWarning.textContent.match(/^\d+/)[0]);
-      let message = `Bạn có chắc muốn chuyển toàn bộ ${roomCount} phòng từ ${roomTypeSourceName.textContent} sang ${targetName} không?`;
-      if (occupiedCount > 0) message += ` Lưu ý: ${occupiedCount} phòng đang thuê sẽ được giữ nguyên trạng thái và thời gian lưu trú.`;
-      if (!window.confirm(message)) event.preventDefault();
+
+    roomTypeSelectAll.addEventListener("change", () => {
+      selectedRoomCheckboxes().forEach((checkbox) => {
+        checkbox.checked = roomTypeSelectAll.checked;
+      });
+      updateRoomSelectionState();
     });
+
+    roomTypeUpdateForm.addEventListener("submit", (event) => {
+      const selected = selectedRoomCheckboxes().filter((checkbox) => checkbox.checked);
+      if (!selected.length) return;
+      const targetName = roomTypeTargetSelect.selectedOptions[0]?.textContent;
+      if (!targetName) return;
+      const sourceName = roomTypeSourceName.textContent;
+      const message = `Bạn có chắc muốn chuyển ${selected.length} phòng đã chọn từ ${sourceName} sang ${targetName} không?`;
+      const occupiedSelected = selected.some((checkbox) => checkbox.dataset.occupied === "true");
+      const renameNote = roomTypeNameInput.value.trim() !== sourceName
+        ? ` Các phòng còn lại và thể loại nguồn sẽ đổi tên thành: ${roomTypeNameInput.value.trim()}.`
+        : "";
+      const occupiedNote = occupiedSelected
+        ? " Phòng đang thuê chỉ thay đổi thể loại; trạng thái và thông tin thuê được giữ nguyên."
+        : "";
+      if (!window.confirm(message + renameNote + occupiedNote)) event.preventDefault();
+    });
+
     document.getElementById("close-room-type-edit-dialog").addEventListener("click", () => roomTypeEditDialog.close());
     document.getElementById("cancel-room-type-edit-dialog").addEventListener("click", () => roomTypeEditDialog.close());
     if (roomTypeEditDialog.hasAttribute("data-open-on-load")) {
       openRoomTypeEditDialog(
         roomTypeEditDialog.dataset.sourceId,
         roomTypeEditDialog.dataset.sourceName,
-        Number(roomTypeEditDialog.dataset.roomCount),
-        Number(roomTypeEditDialog.dataset.occupiedCount),
         roomTypeEditDialog.dataset.targetId,
         true,
+        roomTypeInitialSelectedIds,
       );
     }
   </script>
-
   <section class="dashboard-panel room-types-page" aria-labelledby="room-types-table-title">
     <header class="panel-header">
       <div>
