@@ -211,6 +211,58 @@ def test_account_page_shows_editable_personal_information(client):
     assert 'enctype="multipart/form-data"' in page
 
 
+def test_profile_avatar_fallback_and_picker_markup(client, app):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+    with app.app_context():
+        user = db.session.execute(
+            db.select(User).where(User.email == normalize_email(DEMO_EMAIL))
+        ).scalar_one()
+        user.full_name = "Jack Smith"
+        db.session.commit()
+
+    page = client.get("/account").get_data(as_text=True)
+    topbar = re.search(r'<div class="account-identity".*?</div>', page, re.DOTALL)
+    assert topbar is not None
+    assert 'id="profile-avatar-preview"' in page
+    assert 'class="profile-avatar profile-avatar__fallback"' in page
+    assert ">J</span>" in page
+    assert "Chọn ảnh đại diện" in page
+    assert 'for="avatar"' in page
+    assert 'id="avatar" name="avatar" type="file"' in page
+    assert 'accept="image/jpeg,image/png,image/webp"' in page
+    assert 'enctype="multipart/form-data"' in page
+    assert 'Choose File' not in page and 'No file chosen' not in page
+    assert "URL.createObjectURL(file)" in page
+    assert 'input.addEventListener("click"' in page
+    assert 'input.value = ""' in page
+    assert "URL.revokeObjectURL(previewUrl)" in page
+    assert 'id="avatar-crop-dialog"' in page
+    assert 'id="avatar-crop-canvas" width="320" height="320"' in page
+    assert 'id="avatar-crop-zoom" type="range"' in page
+    assert 'id="avatar-crop-cancel"' in page and "Hủy" in page
+    assert 'id="avatar-crop-confirm"' in page and "Xác nhận" in page
+    assert "setPointerCapture" in page
+    assert "pointercancel" in page
+    assert "new DataTransfer()" in page
+    assert 'new File([blob], "avatar.jpg"' in page
+    assert "input.files = transfer.files" in page
+    assert "Lưu thông tin" in page
+    assert page.count('type="submit"') == 2  # profile save and shared logout
+    assert 'id="email" name="email" type="email"' in page and "readonly" in page
+
+    with app.app_context():
+        user = db.session.execute(
+            db.select(User).where(User.email == normalize_email(DEMO_EMAIL))
+        ).scalar_one()
+        user.full_name = ""
+        db.session.commit()
+    fallback_page = client.get("/account").get_data(as_text=True)
+    email_initial = normalize_email(DEMO_EMAIL)[:1].upper()
+    assert f'class="profile-avatar profile-avatar__fallback" id="profile-avatar-preview" aria-hidden="true">{email_initial}</span>' in fallback_page
+    assert f'class="account-avatar" aria-hidden="true">{email_initial}</span>' in fallback_page
+
+
+
 def test_account_info_menu_item_opens_profile_form(client):
     _login(client, DEMO_EMAIL, DEMO_PASSWORD)
     page = client.get("/").get_data(as_text=True)
@@ -303,6 +355,9 @@ def test_profile_update_persists_fields_and_avatar_without_changing_email(client
     avatar_response = client.get(f"/profile-images/{avatar_name}")
     assert avatar_response.status_code == 200
     assert avatar_response.data.startswith(b"\x89PNG\r\n\x1a\n")
+    assert f'src="/profile-images/{avatar_name}"' in page
+    room_page = client.get("/rooms").get_data(as_text=True)
+    assert f'<img class="account-avatar account-avatar--image" src="/profile-images/{avatar_name}" alt="">' in room_page
 
 
 def test_profile_rejects_invalid_required_fields_and_avatar(client, app):
@@ -576,3 +631,71 @@ def test_login_post_requires_csrf_token(client):
 
     assert response.status_code == 400
     assert "Phiên biểu mẫu không hợp lệ" in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("avatar.jpg", b"\xff\xd8\xffjpeg-data"),
+        ("avatar.jpeg", b"\xff\xd8\xffjpeg-data"),
+        ("avatar.png", b"\x89PNG\r\n\x1a\nimage-data"),
+        ("avatar.webp", b"RIFF\x04\x00\x00\x00WEBPimage-data"),
+    ],
+)
+def test_profile_accepts_supported_avatar_formats(client, app, filename, content):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', client.get("/account").get_data(as_text=True)).group(1)
+    response = client.post(
+        "/account",
+        data={
+            "csrf_token": token,
+            "full_name": "Supported Image",
+            "birth_date": "1990-04-12",
+            "phone": "0912345678",
+            "avatar": (BytesIO(content), filename),
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 302
+    with app.app_context():
+        user = db.session.execute(db.select(User).where(User.email == normalize_email(DEMO_EMAIL))).scalar_one()
+        assert user.avatar.endswith("." + filename.rsplit(".", 1)[1])
+
+
+def test_profile_oversized_avatar_preserves_existing_avatar_and_profile(client, app):
+    _login(client, DEMO_EMAIL, DEMO_PASSWORD)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', client.get("/account").get_data(as_text=True)).group(1)
+    first = client.post(
+        "/account",
+        data={
+            "csrf_token": token,
+            "full_name": "Original Profile",
+            "birth_date": "1990-04-12",
+            "phone": "0912345678",
+            "avatar": (BytesIO(b"\x89PNG\r\n\x1a\noriginal-image"), "original.png"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert first.status_code == 302
+    with app.app_context():
+        user = db.session.execute(db.select(User).where(User.email == normalize_email(DEMO_EMAIL))).scalar_one()
+        old_avatar = user.avatar
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', client.get("/account").get_data(as_text=True)).group(1)
+    response = client.post(
+        "/account",
+        data={
+            "csrf_token": token,
+            "full_name": "Should Not Save",
+            "birth_date": "1991-05-13",
+            "phone": "0912345679",
+            "avatar": (BytesIO(b"\x89PNG\r\n\x1a\n" + b"x" * (5 * 1024 * 1024)), "large.png"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    assert "không được vượt quá 5 MB" in response.get_data(as_text=True)
+    with app.app_context():
+        user = db.session.execute(db.select(User).where(User.email == normalize_email(DEMO_EMAIL))).scalar_one()
+        assert user.avatar == old_avatar
+        assert user.full_name == "Original Profile"
+        assert user.phone == "0912345678"

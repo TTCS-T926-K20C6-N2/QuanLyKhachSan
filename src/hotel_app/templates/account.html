@@ -27,38 +27,281 @@
     </header>
     <form class="room-form profile-form" method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="room-form__grid">
-        <div class="form-field">
-          <label for="full_name">Họ và tên <span aria-hidden="true">*</span></label>
-          <input id="full_name" name="full_name" type="text" maxlength="120" autocomplete="name" value="{{ full_name }}" required aria-describedby="full-name-error">
-          {% if errors.get('full_name') %}<span class="field-error" id="full-name-error">{{ errors.full_name }}</span>{% endif %}
+      <div class="profile-layout">
+        <div class="profile-main">
+          <div class="room-form__grid">
+            <div class="form-field">
+              <label for="full_name">Họ và tên <span aria-hidden="true">*</span></label>
+              <input id="full_name" name="full_name" type="text" maxlength="120" autocomplete="name" value="{{ full_name }}" required aria-describedby="full-name-error">
+              {% if errors.get('full_name') %}<span class="field-error" id="full-name-error">{{ errors.full_name }}</span>{% endif %}
+            </div>
+            <div class="form-field">
+              <label for="birth_date">Ngày sinh <span aria-hidden="true">*</span></label>
+              <input id="birth_date" name="birth_date" type="date" value="{{ birth_date }}" max="{{ today }}" required aria-describedby="birth-date-error">
+              {% if errors.get('birth_date') %}<span class="field-error" id="birth-date-error">{{ errors.birth_date }}</span>{% endif %}
+            </div>
+            <div class="form-field">
+              <label for="email">Email</label>
+              <input id="email" name="email" type="email" value="{{ user.email }}" readonly aria-readonly="true">
+              <span class="field-hint">Email được cố định theo tài khoản đăng nhập.</span>
+            </div>
+            <div class="form-field">
+              <label for="phone">Số điện thoại <span aria-hidden="true">*</span></label>
+              <input id="phone" name="phone" type="tel" maxlength="30" autocomplete="tel" value="{{ phone }}" required aria-describedby="phone-error">
+              {% if errors.get('phone') %}<span class="field-error" id="phone-error">{{ errors.phone }}</span>{% endif %}
+            </div>
+          </div>
         </div>
-        <div class="form-field">
-          <label for="birth_date">Ngày sinh <span aria-hidden="true">*</span></label>
-          <input id="birth_date" name="birth_date" type="date" value="{{ birth_date }}" max="{{ today }}" required aria-describedby="birth-date-error">
-          {% if errors.get('birth_date') %}<span class="field-error" id="birth-date-error">{{ errors.birth_date }}</span>{% endif %}
-        </div>
-        <div class="form-field">
-          <label for="email">Email</label>
-          <input id="email" name="email" type="email" value="{{ user.email }}" readonly aria-readonly="true">
-          <span class="field-hint">Email được cố định theo tài khoản đăng nhập.</span>
-        </div>
-        <div class="form-field">
-          <label for="phone">Số điện thoại <span aria-hidden="true">*</span></label>
-          <input id="phone" name="phone" type="tel" maxlength="30" autocomplete="tel" value="{{ phone }}" required aria-describedby="phone-error">
-          {% if errors.get('phone') %}<span class="field-error" id="phone-error">{{ errors.phone }}</span>{% endif %}
-        </div>
-        <div class="form-field form-field--wide">
-          <label for="avatar">Ảnh đại diện</label>
-          {% if user.avatar %}<img class="profile-avatar-preview" src="{{ url_for('profile_image', filename=user.avatar) }}" alt="Ảnh đại diện hiện tại">{% endif %}
-          <input id="avatar" name="avatar" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="avatar-hint avatar-error">
-          <span class="field-hint" id="avatar-hint">JPG, PNG hoặc WEBP, tối đa 5 MB. Để trống nếu không đổi ảnh.</span>
-          {% if errors.get('avatar') %}<span class="field-error" id="avatar-error">{{ errors.avatar }}</span>{% endif %}
-        </div>
+        <aside class="profile-avatar-panel" aria-label="Ảnh đại diện">
+          <label class="profile-avatar-picker" for="avatar" aria-label="Chọn ảnh đại diện">
+            {% if user.avatar %}
+              <img class="profile-avatar profile-avatar__image" id="profile-avatar-preview" src="{{ url_for('profile_image', filename=user.avatar) }}" alt="Ảnh đại diện hiện tại">
+            {% else %}
+              <span class="profile-avatar profile-avatar__fallback" id="profile-avatar-preview" aria-hidden="true">{{ (user.full_name[:1] if user.full_name else user.email[:1])|upper }}</span>
+            {% endif %}
+            <span class="profile-avatar__overlay" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 24 24" focusable="false"><path d="M4 7h3l1.4-2h7.2L17 7h3v12H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+              <span>Đổi ảnh</span>
+            </span>
+          </label>
+          <input class="profile-avatar-input" id="avatar" name="avatar" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="avatar-hint avatar-error">
+          <span class="profile-avatar__hint" id="avatar-hint">Nhấn để đổi ảnh<br>JPG, PNG hoặc WEBP · tối đa 5 MB</span>
+          <span class="field-error" id="avatar-selection-error" role="alert" aria-live="polite"></span>
+          {% if errors.get('avatar') %}<span class="field-error" id="avatar-error" role="alert">{{ errors.avatar }}</span>{% endif %}
+        </aside>
       </div>
       <footer class="room-form__footer">
         <button class="action-button action-button--primary" type="submit">Lưu thông tin</button>
       </footer>
     </form>
-  </section>
+    <dialog class="avatar-crop-dialog" id="avatar-crop-dialog" aria-labelledby="avatar-crop-title">
+      <div class="avatar-crop-dialog__content">
+        <h2 id="avatar-crop-title">Căn chỉnh ảnh đại diện</h2>
+        <div class="avatar-crop-viewport" id="avatar-crop-viewport" aria-label="Vùng căn chỉnh ảnh đại diện">
+          <canvas id="avatar-crop-canvas" width="320" height="320"></canvas>
+        </div>
+        <p class="avatar-crop-help">Kéo ảnh để căn chỉnh trong khung tròn.</p>
+        <label class="avatar-crop-zoom" for="avatar-crop-zoom">
+          <span>Thu phóng</span>
+          <input id="avatar-crop-zoom" type="range" min="1" max="3" step="0.01" value="1" aria-label="Thu phóng ảnh">
+        </label>
+        <p class="avatar-crop-error" id="avatar-crop-error" role="status" aria-live="polite"></p>
+        <div class="avatar-crop-dialog__actions">
+          <button class="action-button action-button--edit" id="avatar-crop-cancel" type="button">Hủy</button>
+          <button class="action-button action-button--primary" id="avatar-crop-confirm" type="button">Xác nhận</button>
+        </div>
+      </div>
+    </dialog>
+    <script>
+      (() => {
+        const input = document.getElementById("avatar");
+        let preview = document.getElementById("profile-avatar-preview");
+        const dialog = document.getElementById("avatar-crop-dialog");
+        const viewport = document.getElementById("avatar-crop-viewport");
+        const cropCanvas = document.getElementById("avatar-crop-canvas");
+        const zoomInput = document.getElementById("avatar-crop-zoom");
+        const cancelButton = document.getElementById("avatar-crop-cancel");
+        const confirmButton = document.getElementById("avatar-crop-confirm");
+        const errorMessage = document.getElementById("avatar-crop-error");
+        const selectionError = document.getElementById("avatar-selection-error");
+        const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+        const outputSize = 512;
+        const viewportSize = cropCanvas.width;
+        let previewUrl = null;
+        let sourceUrl = null;
+        let sourceImage = null;
+        let confirmedFile = null;
+        let baseScale = 1;
+        let zoom = 1;
+        let offsetX = 0;
+        let offsetY = 0;
+        let pointer = null;
+
+        if (!input || !preview || !dialog || !viewport || !cropCanvas) return;
+        const context = cropCanvas.getContext("2d");
+        if (!context) return;
+
+        function restoreConfirmedFile() {
+          const transfer = new DataTransfer();
+          if (confirmedFile) transfer.items.add(confirmedFile);
+          input.files = transfer.files;
+        }
+
+        function clampOffsets() {
+          const scale = baseScale * zoom;
+          const width = sourceImage.naturalWidth * scale;
+          const height = sourceImage.naturalHeight * scale;
+          offsetX = Math.min(0, Math.max(viewportSize - width, offsetX));
+          offsetY = Math.min(0, Math.max(viewportSize - height, offsetY));
+        }
+
+        function drawCropPreview() {
+          if (!sourceImage) return;
+          clampOffsets();
+          const scale = baseScale * zoom;
+          context.clearRect(0, 0, viewportSize, viewportSize);
+          context.drawImage(
+            sourceImage,
+            offsetX,
+            offsetY,
+            sourceImage.naturalWidth * scale,
+            sourceImage.naturalHeight * scale,
+          );
+        }
+
+        function revokeSourceUrl() {
+          if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+          sourceUrl = null;
+          sourceImage = null;
+        }
+
+        function closeCrop(restoreFile) {
+          if (restoreFile) restoreConfirmedFile();
+          if (dialog.open) dialog.close();
+          revokeSourceUrl();
+          errorMessage.textContent = "";
+          pointer = null;
+        }
+
+        function showCropFor(file) {
+          revokeSourceUrl();
+          sourceUrl = URL.createObjectURL(file);
+          const image = new Image();
+          sourceImage = image;
+          image.onload = () => {
+            if (sourceImage !== image) return;
+            baseScale = Math.max(
+              viewportSize / image.naturalWidth,
+              viewportSize / image.naturalHeight,
+            );
+            zoom = 1;
+            zoomInput.value = "1";
+            offsetX = (viewportSize - image.naturalWidth * baseScale) / 2;
+            offsetY = (viewportSize - image.naturalHeight * baseScale) / 2;
+            drawCropPreview();
+            errorMessage.textContent = "";
+            if (!dialog.open) dialog.showModal();
+          };
+          image.onerror = () => {
+            if (sourceImage !== image) return;
+            closeCrop(true);
+            selectionError.textContent = "Không thể đọc ảnh đã chọn. Vui lòng chọn ảnh khác.";
+          };
+          image.src = sourceUrl;
+        }
+
+        input.addEventListener("click", () => {
+          input.value = "";
+        });
+        input.addEventListener("cancel", restoreConfirmedFile);
+        input.addEventListener("change", () => {
+          const file = input.files[0];
+          if (!file) {
+            restoreConfirmedFile();
+            return;
+          }
+          if (!allowedTypes.has(file.type) || file.size > 5 * 1024 * 1024) {
+            restoreConfirmedFile();
+            selectionError.textContent = file.size > 5 * 1024 * 1024
+              ? "Ảnh đại diện không được vượt quá 5 MB."
+              : "Vui lòng chọn ảnh JPG, PNG hoặc WEBP hợp lệ.";
+            return;
+          }
+          selectionError.textContent = "";
+          showCropFor(file);
+        });
+
+        viewport.addEventListener("pointerdown", (event) => {
+          if (!sourceImage) return;
+          pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+          viewport.setPointerCapture(event.pointerId);
+          event.preventDefault();
+        });
+        viewport.addEventListener("pointermove", (event) => {
+          if (!pointer || pointer.id !== event.pointerId) return;
+          const bounds = viewport.getBoundingClientRect();
+          const factor = viewportSize / bounds.width;
+          offsetX += (event.clientX - pointer.x) * factor;
+          offsetY += (event.clientY - pointer.y) * factor;
+          pointer.x = event.clientX;
+          pointer.y = event.clientY;
+          drawCropPreview();
+        });
+        const stopPointer = (event) => {
+          if (pointer && pointer.id === event.pointerId) pointer = null;
+        };
+        viewport.addEventListener("pointerup", stopPointer);
+        viewport.addEventListener("pointercancel", stopPointer);
+        zoomInput.addEventListener("input", () => {
+          if (!sourceImage) return;
+          const nextZoom = Number(zoomInput.value);
+          const ratio = nextZoom / zoom;
+          offsetX = viewportSize / 2 - (viewportSize / 2 - offsetX) * ratio;
+          offsetY = viewportSize / 2 - (viewportSize / 2 - offsetY) * ratio;
+          zoom = nextZoom;
+          drawCropPreview();
+        });
+
+        cancelButton.addEventListener("click", () => closeCrop(true));
+        dialog.addEventListener("cancel", () => closeCrop(true));
+        confirmButton.addEventListener("click", () => {
+          if (!sourceImage) return;
+          const scale = baseScale * zoom;
+          const cropX = -offsetX / scale;
+          const cropY = -offsetY / scale;
+          const cropSize = viewportSize / scale;
+          const output = document.createElement("canvas");
+          output.width = outputSize;
+          output.height = outputSize;
+          const outputContext = output.getContext("2d");
+          if (!outputContext) return;
+          outputContext.fillStyle = "#ffffff";
+          outputContext.fillRect(0, 0, outputSize, outputSize);
+          outputContext.drawImage(
+            sourceImage,
+            cropX,
+            cropY,
+            cropSize,
+            cropSize,
+            0,
+            0,
+            outputSize,
+            outputSize,
+          );
+          output.toBlob((blob) => {
+            if (!blob) {
+              errorMessage.textContent = "Không thể xử lý ảnh này. Vui lòng thử ảnh khác.";
+              return;
+            }
+            const croppedFile = new File([blob], "avatar.jpg", {
+              type: "image/jpeg",
+              lastModified: Date.now(),
+            });
+            const transfer = new DataTransfer();
+            transfer.items.add(croppedFile);
+            input.files = transfer.files;
+            confirmedFile = croppedFile;
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
+            previewUrl = URL.createObjectURL(croppedFile);
+            if (preview instanceof HTMLImageElement) {
+              preview.src = previewUrl;
+            } else {
+              const image = document.createElement("img");
+              image.id = "profile-avatar-preview";
+              image.className = "profile-avatar profile-avatar__image";
+              image.alt = "Ảnh đại diện đã căn chỉnh";
+              image.src = previewUrl;
+              preview.replaceWith(image);
+              preview = image;
+            }
+            closeCrop(false);
+          }, "image/jpeg", 0.92);
+        });
+
+        window.addEventListener("beforeunload", () => {
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+          revokeSourceUrl();
+        }, { once: true });
+      })();
+    </script>  </section>
 {% endblock %}
