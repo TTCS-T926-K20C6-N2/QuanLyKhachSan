@@ -1,0 +1,38 @@
+<dialog class="room-dialog reservation-dialog" id="room-reservation-dialog" aria-labelledby="reservation-dialog-title" data-nightly-rate="{{ room_display_values[reservation_modal_room.id].price if reservation_modal_room else 0 }}"{% if reservation_modal_open %} data-open-on-load{% endif %}>
+  <header class="room-dialog__header">
+    <div><p class="page-kicker">Quản lý phòng</p><h2 id="reservation-dialog-title">{{ "Điều chỉnh đặt trước" if reservation_edit_mode else "Đặt trước phòng" }}</h2><p class="room-dialog__subtitle">Lịch đặt trước không làm thay đổi trạng thái thuê hiện tại của phòng.</p></div>
+    <button class="room-dialog__close" id="close-reservation-dialog" type="button" aria-label="Đóng" title="Đóng"><svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg></button>
+  </header>
+  {% if reservation_modal_error %}<div class="form-alert form-alert--error room-dialog__alert" role="alert">{{ reservation_modal_error }}</div>{% endif %}
+  {% if reservation_modal_room %}
+    {% set reservation_room = reservation_modal_room %}
+    {% set reservation_price = room_display_values[reservation_room.id].price %}
+    {% set reservation_action = url_for("edit_room_reservation", room_number=reservation_room.number, reservation_id=reservation_modal_record.id) if reservation_edit_mode and reservation_modal_record else url_for("reserve_room", room_number=reservation_room.number) %}
+    <section class="reservation-room-summary" aria-label="Thông tin đặt phòng">
+      <p><span>Phòng</span><strong>{{ reservation_room.number }}</strong></p>
+      <p><span>Đơn giá hiện tại</span><strong>{{ "{:,.0f}".format(reservation_price) }} VNĐ / đêm</strong></p>
+    </section>
+    <form class="room-form reservation-form" id="room-reservation-form" method="post" action="{{ reservation_action }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-field"><label for="guest-name">Khách hàng</label><input id="guest-name" name="guest_name" type="text" maxlength="120" value="{{ reservation_form.guest_name }}" required>{% if reservation_errors.guest_name %}<small class="field-error" role="alert">{{ reservation_errors.guest_name }}</small>{% endif %}</div>
+      <div class="form-field"><label for="guest-phone">Số điện thoại</label><input id="guest-phone" name="guest_phone" type="tel" maxlength="30" value="{{ reservation_form.guest_phone }}" required>{% if reservation_errors.guest_phone %}<small class="field-error" role="alert">{{ reservation_errors.guest_phone }}</small>{% endif %}</div>
+      <div class="reservation-time-fields">
+        <div class="form-field"><label for="reserved-from">Nhận phòng</label><input id="reserved-from" name="reserved_from" type="datetime-local" value="{{ reservation_form.reserved_from }}" required>{% if reservation_errors.reserved_from %}<small class="field-error" role="alert">{{ reservation_errors.reserved_from }}</small>{% endif %}</div>
+        <div class="form-field"><label for="reserved-until">Trả phòng</label><input id="reserved-until" name="reserved_until" type="datetime-local" value="{{ reservation_form.reserved_until }}" required>{% if reservation_errors.reserved_until %}<small class="field-error" role="alert">{{ reservation_errors.reserved_until }}</small>{% endif %}</div>
+      </div>
+      <section class="reservation-total" aria-live="polite"><div><span>Thời gian đặt</span><strong id="reservation-duration">—</strong></div><div><span>Tổng tiền dự kiến</span><strong id="reservation-total">—</strong></div><small>Tiền dự kiến = đơn giá theo đêm × số phút / 1.440; máy chủ xác nhận khi lưu.</small></section>
+      <footer class="room-form__footer"><button class="action-button" id="cancel-reservation-dialog" type="button">Hủy</button><button class="action-button action-button--primary" type="submit">{{ "Lưu thay đổi" if reservation_edit_mode else "Xác nhận đặt trước" }}</button></footer>
+    </form>
+    {% set room_bookings = room_reservations_by_room.get(reservation_room.id, []) %}
+    {% if room_bookings %}
+      <section class="reservation-list" aria-labelledby="reservation-list-title"><h3 id="reservation-list-title">Lịch đặt trước của phòng</h3>
+        {% for reservation in room_bookings %}
+          <article class="reservation-list__item">
+            <div><strong>{{ reservation.guest_name }}</strong><span>{{ reservation.guest_phone }}</span><time>{{ reservation.reserved_from.strftime("%d/%m/%Y %H:%M") }} → {{ reservation.reserved_until.strftime("%d/%m/%Y %H:%M") }}</time><small>{{ "{:,.0f}".format(reservation.total_price) }} VNĐ · {{ reservation.duration_minutes // 60 }} giờ {{ reservation.duration_minutes % 60 }} phút</small></div>
+            <div class="reservation-list__actions"><a class="action-button action-button--edit" href="{{ url_for("edit_room_reservation", room_number=reservation_room.number, reservation_id=reservation.id) }}">Sửa</a><form method="post" action="{{ url_for("cancel_room_reservation", room_number=reservation_room.number, reservation_id=reservation.id) }}" onsubmit="return confirm('Bạn có chắc muốn hủy lịch đặt trước này?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="action-button action-button--delete" type="submit">Hủy đặt</button></form></div>
+          </article>
+        {% endfor %}
+      </section>
+    {% endif %}
+  {% endif %}
+</dialog>

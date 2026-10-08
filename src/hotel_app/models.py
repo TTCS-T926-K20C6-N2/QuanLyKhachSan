@@ -119,6 +119,31 @@ class RoomRental(db.Model):
     total_price = db.Column(db.Integer, nullable=False)
 
 
+class RoomReservation(db.Model):
+    """A future room schedule with an immutable-at-booking price snapshot."""
+
+    __tablename__ = "room_reservations"
+    __table_args__ = (
+        db.Index("ix_room_reservations_room_status_from", "room_id", "status", "reserved_from"),
+        db.Index("ix_room_reservations_status_from", "status", "reserved_from"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    room_id = db.Column(
+        db.Integer, db.ForeignKey("rooms.id", ondelete="SET NULL"), nullable=True
+    )
+    room_number = db.Column(db.String(20), nullable=False)
+    guest_name = db.Column(db.String(120), nullable=False)
+    guest_phone = db.Column(db.String(30), nullable=False)
+    reserved_from = db.Column(db.DateTime, nullable=False)
+    reserved_until = db.Column(db.DateTime, nullable=False)
+    duration_minutes = db.Column(db.Integer, nullable=False)
+    nightly_rate = db.Column(db.Integer, nullable=False)
+    total_price = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(16), nullable=False, default="booked", server_default="booked")
+    created_at = db.Column(db.DateTime, nullable=False)
+
+
 class RoomSeedState(db.Model):
     """Records one-time room seeding so deleted demos do not return."""
 

@@ -228,9 +228,8 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-card { position: relative; display: flex; min-width: 0; flex-direction: column; padding: 15px 15px 14px 17px; border: 1px solid #dce5ed; border-left: 4px solid var(--blue-700); border-radius: 10px; background: #ffffff; transition: transform 140ms ease, box-shadow 140ms ease; }
 .room-card:hover { transform: translateY(-2px); box-shadow: 0 9px 20px rgba(33, 63, 92, 0.1); }
 .room-card--empty { border-color: #b8e3ca; border-left-color: var(--green); background: var(--green-soft); }
-.room-card--occupied { border-color: #e2c8c5; border-left-color: #bf7770; background: #f5f1f0; }
+.room-card--occupied { border-color: #efc1bc; border-left-color: var(--red); background: var(--red-soft); }
 .room-card--cleaning { border-left-color: var(--amber); }
-.room-card--occupied .room-image { filter: grayscale(0.95) saturate(0.25); opacity: 0.42; }
 .room-card--occupied .room-card__top,
 .room-card--occupied .room-meta,
 .room-card--occupied .room-times { color: #435365; }
@@ -256,6 +255,35 @@ a.nav-link:not(.nav-link--active):focus-visible { background: rgba(255, 255, 255
 .room-card__delete .action-button { width: 100%; }
 .room-actions > .action-button { width: 100%; min-width: 0; white-space: normal; overflow-wrap: anywhere; text-align: center; }
 .room-actions__rental { width: 100%; min-width: 0; box-sizing: border-box; white-space: normal; overflow-wrap: anywhere; text-align: center; }
+.room-next-reservation { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--blue-700); border-radius: 4px; background: #f0f7fc; color: #334b63; font-size: 0.78rem; }
+.room-next-reservation strong { display: block; color: var(--navy-900); }
+.action-button--reserve { border-color: #b8d6ec; background: #eaf5fc; color: var(--blue-800); }
+.reservation-dialog { width: min(620px, calc(100vw - 28px)); max-height: min(90vh, 850px); overflow-y: auto; }
+.reservation-room-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 24px 14px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); }
+.reservation-room-summary p { display: flex; flex-direction: column; gap: 2px; margin: 0; color: var(--muted); font-size: 0.8rem; }
+.reservation-room-summary strong { color: var(--navy-900); font-size: 0.94rem; }
+.reservation-form { padding-top: 0; }
+.reservation-time-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.reservation-total { display: grid; gap: 6px; margin: 12px 0; padding: 12px; border-radius: 8px; background: var(--surface-soft); }
+.reservation-total > div { display: flex; justify-content: space-between; gap: 10px; color: #52667a; }
+.reservation-total strong { color: var(--navy-900); }
+.reservation-total small { color: var(--muted); font-size: 0.76rem; }
+.reservation-list { margin: 0 24px 22px; padding-top: 14px; border-top: 1px solid var(--line); }
+.reservation-list h3 { margin: 0 0 9px; color: var(--navy-900); font-size: 0.98rem; }
+.reservation-list__item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.reservation-list__item > div:first-child { display: grid; min-width: 0; gap: 2px; color: #334b63; font-size: 0.82rem; }
+.reservation-list__item time { overflow-wrap: anywhere; color: var(--navy-900); font-weight: 700; }
+.reservation-list__item small { color: var(--muted); }
+.reservation-list__actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.reservation-list__actions form { margin: 0; }
+.reservation-list__actions .action-button { min-height: 34px; padding: 6px 9px; font-size: 0.78rem; }
+@media (max-width: 520px) {
+  .reservation-time-fields { grid-template-columns: 1fr; gap: 8px; }
+  .reservation-room-summary { margin-inline: 16px; }
+  .reservation-list { margin-inline: 16px; }
+  .reservation-list__item { align-items: flex-start; flex-direction: column; }
+}
+
 .room-checkout { width: 100%; min-width: 0; margin: 0; }
 .room-checkout .action-button { display: flex; width: 100%; min-width: 0; box-sizing: border-box; justify-content: center; white-space: normal; overflow-wrap: anywhere; }
 

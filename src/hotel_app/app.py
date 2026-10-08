@@ -27,6 +27,7 @@ from .models import (
     LegacyRoomSessionMigration,
     Room,
     RoomRental,
+    RoomReservation,
     RoomSeedState,
     RoomType,
     RoomTypeSeedState,
@@ -228,6 +229,17 @@ def _valid_room_time(value: str) -> bool:
     except ValueError:
         return False
     return parsed_time.strftime("%H:%M") == value
+
+
+def _intervals_overlap(start_a: datetime, end_a: datetime, start_b: datetime, end_b: datetime) -> bool:
+    """Return whether two half-open room schedule intervals overlap."""
+
+    return start_a < end_b and end_a > start_b
+
+
+def _valid_vietnamese_phone(value: str) -> bool:
+    digits_only = re.sub(r"\D", "", value)
+    return bool(re.fullmatch(r"(?:0(?:3|5|7|8|9)\d{8}|84\d{9})", digits_only))
 
 
 def _rental_amount(price_per_night: int, duration_minutes: int) -> int:
@@ -494,6 +506,113 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if user is None:
             session.clear()
         return user
+
+    def latest_room_rental(room: Room) -> RoomRental | None:
+        return db.session.execute(
+            db.select(RoomRental).where(
+                RoomRental.room_id == room.id, RoomRental.room_number == room.number
+            ).order_by(RoomRental.rented_at.desc(), RoomRental.id.desc()).limit(1)
+        ).scalar_one_or_none()
+
+    def booked_reservations_for_room(room_id: int) -> list[RoomReservation]:
+        return db.session.execute(
+            db.select(RoomReservation).where(
+                RoomReservation.room_id == room_id, RoomReservation.status == "booked"
+            ).order_by(RoomReservation.reserved_from, RoomReservation.id)
+        ).scalars().all()
+
+    def overlapping_booked_reservations(
+        room_id: int, start: datetime, end: datetime, *, exclude_id: int | None = None
+    ) -> list[RoomReservation]:
+        statement = db.select(RoomReservation).where(
+            RoomReservation.room_id == room_id,
+            RoomReservation.status == "booked",
+        )
+        if exclude_id is not None:
+            statement = statement.where(RoomReservation.id != exclude_id)
+        candidates = db.session.execute(
+            statement.order_by(RoomReservation.reserved_from)
+        ).scalars().all()
+        return [
+            reservation
+            for reservation in candidates
+            if _intervals_overlap(
+                start, end, reservation.reserved_from, reservation.reserved_until
+            )
+        ]
+
+    def validate_reservation_form(
+        room: Room, *, exclude_reservation_id: int | None = None
+    ) -> tuple[dict[str, str], dict[str, str], str | None, tuple[datetime, datetime, int, int, int] | None]:
+        form = {
+            "guest_name": request.form.get("guest_name", "").strip(),
+            "guest_phone": request.form.get("guest_phone", "").strip(),
+            "reserved_from": request.form.get("reserved_from", "").strip(),
+            "reserved_until": request.form.get("reserved_until", "").strip(),
+        }
+        errors: dict[str, str] = {}
+        service_error = None
+        if not form["guest_name"]:
+            errors["guest_name"] = "Vui lòng nhập tên khách hàng."
+        elif len(form["guest_name"]) > 120:
+            errors["guest_name"] = "Tên khách hàng không được vượt quá 120 ký tự."
+        if not form["guest_phone"]:
+            errors["guest_phone"] = "Vui lòng nhập số điện thoại."
+        elif len(form["guest_phone"]) > 30 or not _valid_vietnamese_phone(form["guest_phone"]):
+            errors["guest_phone"] = "Số điện thoại không hợp lệ."
+
+        parsed: dict[str, datetime | None] = {"reserved_from": None, "reserved_until": None}
+        for field, label in (("reserved_from", "nhận phòng"), ("reserved_until", "trả phòng")):
+            value = form[field]
+            try:
+                candidate = datetime.strptime(value, "%Y-%m-%dT%H:%M")
+                if candidate.strftime("%Y-%m-%dT%H:%M") != value:
+                    raise ValueError
+                parsed[field] = candidate
+            except ValueError:
+                errors[field] = f"Vui lòng chọn thời gian {label} hợp lệ."
+        reserved_from = parsed["reserved_from"]
+        reserved_until = parsed["reserved_until"]
+        now = datetime.now().replace(second=0, microsecond=0)
+        if reserved_from is not None and reserved_from <= now:
+            errors["reserved_from"] = "Thời gian nhận phòng phải ở trong tương lai."
+        if reserved_from is not None and reserved_until is not None:
+            if reserved_from >= reserved_until:
+                errors["reserved_until"] = "Thời gian trả phòng phải sau thời gian nhận phòng."
+            elif not errors:
+                if room.status == "Đang thuê" and room.state == "occupied":
+                    active_rental = latest_room_rental(room)
+                    if active_rental is None:
+                        service_error = "Không thể xác định lượt thuê hiện tại của phòng."
+                    elif _intervals_overlap(
+                        reserved_from, reserved_until,
+                        active_rental.rented_at, active_rental.expected_checkout,
+                    ):
+                        errors["reserved_from"] = "Thời gian đặt trước bị trùng với lượt thuê hiện tại."
+                elif not (room.status == "Phòng trống" and room.state == "empty"):
+                    service_error = "Trạng thái phòng không hợp lệ để đặt trước."
+                if not errors and service_error is None and overlapping_booked_reservations(
+                    room.id, reserved_from, reserved_until, exclude_id=exclude_reservation_id
+                ):
+                    errors["reserved_from"] = "Thời gian đặt trước bị trùng với lịch đặt khác."
+
+        price = _room_display_values(room)["price"]
+        if price <= 0:
+            service_error = "Phòng chưa có giá hợp lệ, không thể đặt trước."
+        if errors or service_error:
+            return form, errors, service_error, None
+        if reserved_from is None or reserved_until is None:
+            return form, errors, service_error, None
+        duration = int((reserved_until - reserved_from).total_seconds() // 60)
+        return form, errors, service_error, (reserved_from, reserved_until, duration, price, _rental_amount(price, duration))
+
+    def reservation_form_values(reservation: RoomReservation) -> dict[str, str]:
+        return {
+            "guest_name": reservation.guest_name,
+            "guest_phone": reservation.guest_phone,
+            "reserved_from": reservation.reserved_from.strftime("%Y-%m-%dT%H:%M"),
+            "reserved_until": reservation.reserved_until.strftime("%Y-%m-%dT%H:%M"),
+        }
 
     def room_type_options() -> dict[str, str]:
         room_types = db.session.execute(
@@ -897,60 +1016,55 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         all_rooms = _rooms_for_management()
         room_status_counts = _room_status_counts(all_rooms)
         room_count = len(all_rooms)
-        status_by_filter = {
-            "empty": "Phòng trống",
-            "occupied": "Đang thuê",
-        }
+        status_by_filter = {"empty": "Phòng trống", "occupied": "Đang thuê"}
         selected_status = status_by_filter.get(room_status_filter)
-        rooms = (
-            [room for room in all_rooms if room.status == selected_status]
-            if selected_status
-            else all_rooms
-        )
-        room_display_values = {
-            room.id: _room_display_values(room)
-            for room in rooms
-        }
+        rooms = [room for room in all_rooms if room.status == selected_status] if selected_status else all_rooms
+        room_display_values = {room.id: _room_display_values(room) for room in rooms}
         room_ids = [room.id for room in rooms]
         active_room_rentals = {}
+        room_reservations_by_room: dict[int, list[RoomReservation]] = {}
+        next_room_reservations: dict[int, RoomReservation] = {}
+        schedule_now = datetime.now().replace(second=0, microsecond=0)
         if room_ids:
             rentals = db.session.execute(
-                db.select(RoomRental)
-                .where(RoomRental.room_id.in_(room_ids))
+                db.select(RoomRental).where(RoomRental.room_id.in_(room_ids))
                 .order_by(RoomRental.rented_at.desc(), RoomRental.id.desc())
             ).scalars()
             for rental in rentals:
                 active_room_rentals.setdefault(rental.room_id, rental)
+            reservations = db.session.execute(
+                db.select(RoomReservation).where(
+                    RoomReservation.room_id.in_(room_ids),
+                    RoomReservation.status == "booked",
+                ).order_by(RoomReservation.reserved_from, RoomReservation.id)
+            ).scalars().all()
+            for reservation in reservations:
+                room_reservations_by_room.setdefault(reservation.room_id, []).append(reservation)
+                if reservation.reserved_from >= schedule_now:
+                    next_room_reservations.setdefault(reservation.room_id, reservation)
         context = {
-            "errors": {},
-            "room_number": "",
-            "description": "",
-            "price": "",
-            "selected_types": [],
-            "room_types": room_type_options(),
-            "modal_form": True,
-            "room_modal_open": False,
-            "service_error": None,
-            "rent_modal_room": None,
-            "rent_modal_open": False,
-            "rental_started_at": None,
-            "rental_checkout_value": "",
-            "rental_error": None,
-            "rental_edit_mode": False,
+            "errors": {}, "room_number": "", "description": "", "price": "",
+            "selected_types": [], "room_types": room_type_options(),
+            "modal_form": True, "room_modal_open": False, "service_error": None,
+            "rent_modal_room": None, "rent_modal_open": False,
+            "rental_started_at": None, "rental_checkout_value": "",
+            "rental_error": None, "rental_edit_mode": False,
             "rental_min_checkout": None,
+            "reservation_modal_room": None, "reservation_modal_open": False,
+            "reservation_modal_error": None, "reservation_errors": {},
+            "reservation_form": {"guest_name": "", "guest_phone": "", "reserved_from": "", "reserved_until": ""},
+            "reservation_edit_mode": False, "reservation_modal_record": None,
         }
         context.update(form_context)
         return render_template(
-            "room_management.html",
-            user=user,
-            rooms=rooms,
+            "room_management.html", user=user, rooms=rooms,
             room_display_values=room_display_values,
             active_room_rentals=active_room_rentals,
-            room_count=len(rooms),
-            all_room_count=room_count,
+            room_reservations_by_room=room_reservations_by_room,
+            next_room_reservations=next_room_reservations,
+            room_count=len(rooms), all_room_count=room_count,
             room_status_filter=room_status_filter,
-            room_status_counts=room_status_counts,
-            **context,
+            room_status_counts=room_status_counts, **context,
         )
 
     @app.route("/rooms")
@@ -962,6 +1076,125 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if room_status_filter not in {"all", "empty", "occupied"}:
             room_status_filter = "all"
         return render_room_management(user, room_status_filter=room_status_filter)
+
+    @app.route("/rooms/<room_number>/reserve", methods=["GET", "POST"])
+    def reserve_room(room_number: str):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+        room = db.session.execute(
+            db.select(Room).where(Room.number == str(room_number).strip())
+        ).scalar_one_or_none()
+        if room is None:
+            flash("Không tìm thấy phòng cần đặt trước.", "error")
+            return redirect(url_for("room_management"))
+        if request.method == "GET":
+            return render_room_management(
+                user, reservation_modal_room=room, reservation_modal_open=True
+            )
+
+        form, errors, service_error, snapshot = validate_reservation_form(room)
+        if snapshot is not None and not errors and service_error is None:
+            reserved_from, reserved_until, duration, rate, total = snapshot
+            try:
+                db.session.add(RoomReservation(
+                    room_id=room.id, room_number=room.number,
+                    guest_name=form["guest_name"], guest_phone=form["guest_phone"],
+                    reserved_from=reserved_from, reserved_until=reserved_until,
+                    duration_minutes=duration, nightly_rate=rate, total_price=total,
+                    status="booked", created_at=datetime.now().replace(second=0, microsecond=0),
+                ))
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+                app.logger.exception("A room reservation could not be saved.")
+                service_error = "Không thể lưu lịch đặt trước. Vui lòng thử lại."
+                return render_room_management(
+                    user, reservation_modal_room=room, reservation_modal_open=True,
+                    reservation_form=form, reservation_errors=errors,
+                    reservation_modal_error=service_error,
+                ), 503
+            flash(f"Đã đặt trước phòng {room.number} thành công.", "success")
+            return redirect(url_for("room_management"))
+        return render_room_management(
+            user, reservation_modal_room=room, reservation_modal_open=True,
+            reservation_form=form, reservation_errors=errors,
+            reservation_modal_error=service_error,
+        ), 400
+
+    @app.route("/rooms/<room_number>/reservations/<int:reservation_id>/edit", methods=["GET", "POST"])
+    def edit_room_reservation(room_number: str, reservation_id: int):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+        room = db.session.execute(
+            db.select(Room).where(Room.number == str(room_number).strip())
+        ).scalar_one_or_none()
+        reservation = db.session.get(RoomReservation, reservation_id)
+        if room is None or reservation is None or reservation.room_id != room.id or reservation.status != "booked":
+            flash("Không tìm thấy lịch đặt trước đang hoạt động.", "error")
+            return redirect(url_for("room_management"))
+        if request.method == "GET":
+            return render_room_management(
+                user, reservation_modal_room=room, reservation_modal_open=True,
+                reservation_form=reservation_form_values(reservation),
+                reservation_edit_mode=True, reservation_modal_record=reservation,
+            )
+        form, errors, service_error, snapshot = validate_reservation_form(
+            room, exclude_reservation_id=reservation.id
+        )
+        if snapshot is not None and not errors and service_error is None:
+            reserved_from, reserved_until, duration, rate, total = snapshot
+            try:
+                reservation.guest_name = form["guest_name"]
+                reservation.guest_phone = form["guest_phone"]
+                reservation.reserved_from = reserved_from
+                reservation.reserved_until = reserved_until
+                reservation.duration_minutes = duration
+                reservation.nightly_rate = rate
+                reservation.total_price = total
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+                app.logger.exception("A room reservation update failed.")
+                service_error = "Không thể cập nhật lịch đặt trước. Vui lòng thử lại."
+                return render_room_management(
+                    user, reservation_modal_room=room, reservation_modal_open=True,
+                    reservation_form=form, reservation_errors=errors,
+                    reservation_modal_error=service_error, reservation_edit_mode=True,
+                    reservation_modal_record=reservation,
+                ), 503
+            flash(f"Đã cập nhật lịch đặt trước phòng {room.number}.", "success")
+            return redirect(url_for("reserve_room", room_number=room.number))
+        return render_room_management(
+            user, reservation_modal_room=room, reservation_modal_open=True,
+            reservation_form=form, reservation_errors=errors,
+            reservation_modal_error=service_error, reservation_edit_mode=True,
+            reservation_modal_record=reservation,
+        ), 400
+
+    @app.route("/rooms/<room_number>/reservations/<int:reservation_id>/cancel", methods=["POST"])
+    def cancel_room_reservation(room_number: str, reservation_id: int):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+        room = db.session.execute(
+            db.select(Room).where(Room.number == str(room_number).strip())
+        ).scalar_one_or_none()
+        reservation = db.session.get(RoomReservation, reservation_id)
+        if room is None or reservation is None or reservation.room_id != room.id or reservation.status != "booked":
+            flash("Không tìm thấy lịch đặt trước đang hoạt động.", "error")
+            return redirect(url_for("room_management"))
+        try:
+            reservation.status = "cancelled"
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.exception("A room reservation cancellation failed.")
+            flash("Không thể hủy lịch đặt trước. Vui lòng thử lại.", "error")
+            return redirect(url_for("reserve_room", room_number=room.number))
+        flash(f"Đã hủy lịch đặt trước phòng {room.number}.", "success")
+        return redirect(url_for("reserve_room", room_number=room.number))
 
     @app.route("/rooms/<room_number>/rent", methods=["GET", "POST"])
     def rent_room(room_number: str):
@@ -1008,6 +1241,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             rental_error = "Phòng chưa có giá thuê hợp lệ, không thể cho thuê."
         elif expected_checkout is not None and expected_checkout <= started_at:
             rental_error = "Thời gian trả phòng phải sau thời gian bắt đầu thuê."
+        elif expected_checkout is not None and overlapping_booked_reservations(
+            room.id, started_at, expected_checkout
+        ):
+            rental_error = "Thời gian thuê bị trùng với lịch đặt trước của phòng."
 
         if rental_error is None and expected_checkout is not None:
             duration_minutes = int(
@@ -1115,6 +1352,15 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 and expected_checkout <= min_checkout
             ):
                 rental_error = "Thời gian trả phòng phải sau thời điểm hiện tại."
+
+            if (
+                rental_error is None
+                and expected_checkout is not None
+                and overlapping_booked_reservations(
+                    room.id, rental.rented_at, expected_checkout
+                )
+            ):
+                rental_error = "Thời gian thuê bị trùng với lịch đặt trước của phòng."
 
             if rental_error is None and expected_checkout is not None:
                 duration_minutes = int(
@@ -1555,8 +1801,29 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             )
             return redirect(url_for("room_management"))
 
+        booked_reservation = db.session.execute(
+            db.select(RoomReservation.id).where(
+                RoomReservation.room_id == room.id,
+                RoomReservation.status == "booked",
+            ).limit(1)
+        ).scalar_one_or_none()
+        if booked_reservation is not None:
+            flash(
+                f"Không thể xóa phòng {normalized_number} vì còn lịch đặt trước đang hiệu lực. Hãy hủy hoặc hoàn tất lịch đặt trước trước.",
+                "error",
+            )
+            return redirect(url_for("room_management"))
+
         image_name = room.image
         try:
+            historical_reservations = db.session.execute(
+                db.select(RoomReservation).where(
+                    RoomReservation.room_id == room.id,
+                    RoomReservation.status != "booked",
+                )
+            ).scalars().all()
+            for reservation in historical_reservations:
+                reservation.room_id = None
             db.session.delete(room)
             db.session.commit()
         except SQLAlchemyError:
@@ -1605,10 +1872,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 except ValueError:
                     errors["birth_date"] = "Ngày sinh không hợp lệ."
 
-            digits_only = re.sub(r"\D", "", phone)
             if not phone:
                 errors["phone"] = "Vui lòng nhập số điện thoại."
-            elif not re.fullmatch(r"(?:0(?:3|5|7|8|9)\d{8}|84\d{9})", digits_only):
+            elif not _valid_vietnamese_phone(phone):
                 errors["phone"] = "Số điện thoại không hợp lệ."
 
             avatar_upload = request.files.get("avatar")
@@ -2089,6 +2355,35 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(_error: CSRFError):
+        if request.endpoint in {"reserve_room", "edit_room_reservation", "cancel_room_reservation"}:
+            user = current_user()
+            if user is None:
+                return redirect(url_for("login"))
+            room = db.session.execute(
+                db.select(Room).where(Room.number == str(request.view_args.get("room_number", "")).strip())
+            ).scalar_one_or_none()
+            if room is None:
+                return redirect(url_for("room_management"))
+            edit_mode = request.endpoint == "edit_room_reservation"
+            record = db.session.get(RoomReservation, request.view_args.get("reservation_id")) if edit_mode else None
+            form = {
+                "guest_name": request.form.get("guest_name", ""),
+                "guest_phone": request.form.get("guest_phone", ""),
+                "reserved_from": request.form.get("reserved_from", ""),
+                "reserved_until": request.form.get("reserved_until", ""),
+            }
+            if edit_mode and record is not None:
+                form = reservation_form_values(record)
+            return (
+                render_room_management(
+                    user, reservation_modal_room=room, reservation_modal_open=True,
+                    reservation_form=form,
+                    reservation_edit_mode=edit_mode,
+                    reservation_modal_record=record,
+                    reservation_modal_error="Phiên biểu mẫu không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.",
+                ),
+                400,
+            )
         if request.endpoint == "forgot_password":
             return render_template(
                 "forgot_password.html",

@@ -2363,9 +2363,12 @@ def test_room_cards_render_available_and_occupied_actions(client, app):
 
     assert 'class="room-card room-card--occupied"' in html.replace("\\n", "\n")
     assert "Đang thuê" in occupied_card
-    assert occupied_actions.count('class="action-button') == 2
+    assert occupied_actions.count('class="action-button') == 3
     assert "Điều chỉnh thuê" in occupied_actions
     assert "Trả phòng" in occupied_actions
+    assert "Đặt trước" in occupied_actions
+    assert occupied_actions.index("Trả phòng") < occupied_actions.index("Đặt trước") < occupied_actions.index("Điều chỉnh thuê")
+    assert 'href="/rooms/503/reserve"' in occupied_actions
     assert "Cho thuê" not in occupied_actions
     assert "Cập nhật" not in occupied_actions
     assert "Xóa phòng" not in occupied_actions

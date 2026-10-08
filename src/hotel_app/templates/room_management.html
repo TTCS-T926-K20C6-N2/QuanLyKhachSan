@@ -67,6 +67,10 @@
                 <dd>{{ room.check_out or "—" }}</dd>
               </div>
             </dl>
+            {% set next_reservation = next_room_reservations.get(room.id) %}
+            {% if next_reservation %}
+              <p class="room-next-reservation"><strong>Đặt trước tiếp theo:</strong> {{ next_reservation.reserved_from.strftime("%d/%m/%Y %H:%M") }} → {{ next_reservation.reserved_until.strftime("%d/%m/%Y %H:%M") }}</p>
+            {% endif %}
             <div class="room-actions">
               {% if room.status == 'Phòng trống' and room.state == 'empty' %}
                 <a
@@ -100,12 +104,6 @@
                   </button>
                 </form>
               {% elif room.status == 'Đang thuê' and room.state == 'occupied' and room.id in active_room_rentals %}
-                <a
-                  class="action-button action-button--edit room-actions__rental"
-                  href="{{ url_for('edit_room_rental', room_number=room.number) }}"
-                >
-                  Điều chỉnh thuê
-                </a>
                 <form
                   class="room-checkout"
                   method="post"
@@ -113,10 +111,13 @@
                   onsubmit="return confirm('Bạn có chắc muốn trả phòng {{ room.number }}?');"
                 >
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button type="submit" class="action-button action-button--primary">
-                    Trả phòng
-                  </button>
+                  <button type="submit" class="action-button action-button--primary">Trả phòng</button>
                 </form>
+                <a class="action-button action-button--reserve" href="{{ url_for('reserve_room', room_number=room.number) }}">Đặt trước</a>
+                <a
+                  class="action-button action-button--edit room-actions__rental room-actions__full"
+                  href="{{ url_for('edit_room_rental', room_number=room.number) }}"
+                >Điều chỉnh thuê</a>
               {% endif %}
             </div>
           </article>
@@ -144,6 +145,8 @@
   </dialog>
 
   {% include "room_rent_dialog.html" %}
+
+  {% include "room_reservation_dialog.html" %}
 
   <script>
     const roomDialog = document.getElementById("room-dialog");
@@ -220,6 +223,32 @@
     });
     checkoutInput.addEventListener("input", refreshRentalEstimate);
     checkoutInput.addEventListener("change", refreshRentalEstimate);
+    const reservationDialog = document.getElementById("room-reservation-dialog");
+    document.getElementById("close-reservation-dialog").addEventListener("click", () => reservationDialog.close());
+    document.getElementById("cancel-reservation-dialog").addEventListener("click", () => reservationDialog.close());
+    const reservationStart = document.getElementById("reserved-from");
+    const reservationEnd = document.getElementById("reserved-until");
+    const reservationDuration = document.getElementById("reservation-duration");
+    const reservationTotal = document.getElementById("reservation-total");
+    const refreshReservationEstimate = () => {
+      const start = new Date(reservationStart.value);
+      const end = new Date(reservationEnd.value);
+      const minutes = Math.floor((end - start) / 60000);
+      const rate = Number(reservationDialog.dataset.nightlyRate);
+      if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isFinite(rate)) {
+        reservationDuration.textContent = "—"; reservationTotal.textContent = "—"; return;
+      }
+      reservationDuration.textContent = `${Math.floor(minutes / 60)} giờ ${minutes % 60} phút`;
+      reservationTotal.textContent = `${new Intl.NumberFormat("vi-VN").format(Math.round(rate * minutes / 1440))} VNĐ`;
+    };
+    reservationStart.addEventListener("input", refreshReservationEstimate);
+    reservationEnd.addEventListener("input", refreshReservationEstimate);
+    reservationStart.addEventListener("change", refreshReservationEstimate);
+    reservationEnd.addEventListener("change", refreshReservationEstimate);
+    if (reservationDialog.hasAttribute("data-open-on-load")) {
+      refreshReservationEstimate(); reservationDialog.showModal();
+    }
+
     if (rentDialog.hasAttribute("data-open-on-load")) {
       rentForm.dataset.nightlyRate = rentDialog.dataset.nightlyRate;
       if (rentDialog.dataset.editMode !== "true") {
