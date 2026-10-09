@@ -12,7 +12,7 @@ from typing import Any
 
 from flask import Flask, flash, redirect, render_template, request, send_from_directory, session, url_for
 from flask_wtf.csrf import CSRFError
-from sqlalchemy import inspect, text, update
+from sqlalchemy import func, inspect, text, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.utils import secure_filename
 
@@ -40,6 +40,7 @@ from .models import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CLEANING_BUFFER_MINUTES = 60
+MIN_STAY_MINUTES = 60
 CHECKOUT_CLEANING_LOG_NOTE = "__checkout__"
 INSTANCE_PATH = PROJECT_ROOT / "instance"
 INVALID_CREDENTIAL_MESSAGE = "Email hoặc mật khẩu không đúng"
@@ -522,6 +523,31 @@ def _rooms_for_management() -> list[Room]:
     return db.session.execute(
         db.select(Room).order_by(Room.number.asc(), Room.id.asc())
     ).scalars().all()
+
+
+def get_monthly_income(year: int) -> dict[str, Any]:
+    """Aggregate saved rental totals by the month they started."""
+    year_start = datetime(year, 1, 1)
+    year_end = datetime(year + 1, 1, 1)
+    month_expression = func.strftime("%m", RoomRental.rented_at)
+    rows = db.session.execute(
+        db.select(month_expression, func.sum(RoomRental.total_price))
+        .where(RoomRental.rented_at >= year_start, RoomRental.rented_at < year_end)
+        .group_by(month_expression)
+    ).all()
+    monthly_totals = {month: 0 for month in range(1, 13)}
+    for month_text, total in rows:
+        monthly_totals[int(month_text)] = int(total or 0)
+    return {
+        "year": year,
+        "monthly_totals": monthly_totals,
+        "annual_total": sum(monthly_totals.values()),
+    }
+
+
+def format_vnd(value: int) -> str:
+    """Format integer VND using the Vietnamese thousands separator."""
+    return f"{int(value):,}".replace(",", ".") + " VNĐ"
 
 
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
@@ -1219,6 +1245,28 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             room_status_counts=room_status_counts, **context,
         )
 
+    @app.route("/income-statistics")
+    def income_statistics():
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+        report_year = datetime.now().year
+        report = get_monthly_income(report_year)
+        monthly_rows = [
+            {
+                "month": month,
+                "formatted_total": format_vnd(report["monthly_totals"][month]),
+            }
+            for month in range(1, 13)
+        ]
+        return render_template(
+            "income_statistics.html",
+            user=user,
+            report_year=report_year,
+            monthly_rows=monthly_rows,
+            formatted_annual_total=format_vnd(report["annual_total"]),
+        )
+
     @app.route("/rooms")
     def room_management():
         user = current_user()
@@ -1369,6 +1417,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return redirect(url_for("room_management"))
 
         started_at = datetime.now().replace(second=0, microsecond=0)
+        rental_min_checkout_input = started_at + timedelta(minutes=MIN_STAY_MINUTES)
         next_reservation = next_effective_booked_reservation(room.id, started_at)
         rental_max_checkout = (
             next_reservation.reserved_from - timedelta(minutes=CLEANING_BUFFER_MINUTES)
@@ -1390,6 +1439,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 rent_modal_open=True,
                 rental_started_at=started_at,
                 rental_checkout_value=initial_checkout_value,
+                rental_min_checkout_input=rental_min_checkout_input,
                 rental_next_reservation=next_reservation,
                 rental_max_checkout=rental_max_checkout,
                 rental_ready_at=rental_ready_at,
@@ -1417,10 +1467,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 f"Phòng chỉ sẵn sàng cho thuê từ {rental_ready_at.strftime('%H:%M')}; "
                 f"cần chừa tối thiểu {CLEANING_BUFFER_MINUTES} phút sau lượt trước."
             )
-        elif rental_max_checkout is not None and rental_max_checkout <= started_at:
-            rental_error = "Không còn thời gian thuê hợp lệ trước lịch đặt tiếp theo."
+        elif rental_max_checkout is not None and rental_max_checkout < rental_min_checkout_input:
+            rental_error = "Không còn thời gian thuê tối thiểu 60 phút trước lịch đặt tiếp theo."
         elif expected_checkout is not None and expected_checkout <= started_at:
             rental_error = "Thời gian trả phòng phải sau thời gian bắt đầu thuê."
+        elif expected_checkout is not None and expected_checkout < rental_min_checkout_input:
+            rental_error = "Thời gian thuê tối thiểu là 60 phút."
         elif expected_checkout is not None and booked_reservations_conflicting_with_cleaning_buffer(
             room.id, started_at, expected_checkout
         ):
@@ -1461,6 +1513,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                     rent_modal_open=True,
                     rental_started_at=started_at,
                     rental_checkout_value=checkout_value,
+                    rental_min_checkout_input=rental_min_checkout_input,
                     rental_error="Không thể lưu lượt thuê phòng. Vui lòng thử lại.",
                     rental_max_checkout=rental_max_checkout,
                     rental_next_reservation=next_reservation,
@@ -1480,6 +1533,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             rent_modal_open=True,
             rental_started_at=started_at,
             rental_checkout_value=checkout_value,
+            rental_min_checkout_input=rental_min_checkout_input,
             rental_error=rental_error,
             rental_max_checkout=rental_max_checkout,
             rental_next_reservation=next_reservation,
@@ -1518,6 +1572,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
         now = datetime.now().replace(second=0, microsecond=0)
         min_checkout = max(now, rental.rented_at)
+        rental_min_checkout_input = max(
+            now + timedelta(minutes=1),
+            rental.rented_at + timedelta(minutes=MIN_STAY_MINUTES),
+        )
         next_reservation = next_effective_booked_reservation(room.id, now)
         checkout_value = request.form.get(
             "expected_checkout",
@@ -1543,6 +1601,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 and expected_checkout <= min_checkout
             ):
                 rental_error = "Thời gian trả phòng phải sau thời điểm hiện tại."
+            elif (
+                expected_checkout is not None
+                and expected_checkout < rental.rented_at + timedelta(minutes=MIN_STAY_MINUTES)
+            ):
+                rental_error = "Thời gian thuê tối thiểu là 60 phút."
 
             if (
                 rental_error is None
@@ -1581,7 +1644,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                         rental_error=rental_error,
                         rental_edit_mode=True,
                         rental_min_checkout=min_checkout,
-                        rental_min_checkout_input=min_checkout + timedelta(minutes=1),
+                        rental_min_checkout_input=rental_min_checkout_input,
                         rental_max_checkout=(next_reservation.reserved_from - timedelta(minutes=CLEANING_BUFFER_MINUTES)) if next_reservation else None,
                         rental_nightly_rate=rental.nightly_rate,
                         rental_next_reservation=next_reservation,
@@ -1603,7 +1666,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             rental_error=rental_error,
             rental_edit_mode=True,
             rental_min_checkout=min_checkout,
-            rental_min_checkout_input=min_checkout + timedelta(minutes=1),
+            rental_min_checkout_input=rental_min_checkout_input,
             rental_max_checkout=(next_reservation.reserved_from - timedelta(minutes=CLEANING_BUFFER_MINUTES)) if next_reservation else None,
             rental_nightly_rate=rental.nightly_rate,
             rental_next_reservation=next_reservation,

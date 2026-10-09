@@ -143,6 +143,10 @@
               <svg class="icon"><use href="#icon-report"></use></svg>
               <span>Thể loại phòng</span>
             </a>
+            <a class="nav-link{% if request.endpoint == 'income_statistics' %} nav-link--active{% endif %}" href="{{ url_for('income_statistics') }}"{% if request.endpoint == 'income_statistics' %} aria-current="page"{% endif %}>
+              <svg class="icon"><use href="#icon-chart"></use></svg>
+              <span>Thống kê thu nhập</span>
+            </a>
           </div>
         </nav>
       </aside>

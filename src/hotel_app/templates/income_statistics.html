@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Thống kê thu nhập | Hotel Management{% endblock %}
+
+{% block content %}
+  <section class="dashboard-panel income-statistics" aria-labelledby="income-statistics-title">
+    <header class="panel-header">
+      <div>
+        <h2 id="income-statistics-title">Thống kê thu nhập</h2>
+        <p>Năm {{ report_year }}</p>
+      </div>
+    </header>
+    <div class="income-statistics__table-wrap" role="region" aria-label="Thống kê thu nhập năm {{ report_year }}" tabindex="0">
+      <table class="income-statistics__table">
+        <thead>
+          <tr><th scope="col">Tháng</th><th scope="col">Tổng tiền của tháng</th></tr>
+        </thead>
+        <tbody>
+          {% for row in monthly_rows %}
+            <tr><th scope="row">Tháng {{ row.month }}</th><td>{{ row.formatted_total }}</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr><th scope="row">Tổng cộng</th><td>{{ formatted_annual_total }}</td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+{% endblock %}

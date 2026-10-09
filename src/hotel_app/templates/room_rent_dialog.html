@@ -64,7 +64,7 @@
         <p>Phòng cần tối thiểu {{ cleaning_buffer_minutes }} phút để dọn dẹp trước lượt đặt tiếp theo.</p>
         {% if rental_max_checkout %}
           <p><strong>Giờ trả muộn nhất:</strong> {{ rental_max_checkout.strftime('%d/%m/%Y %H:%M') }}</p>
-          {% if rental_started_at and rental_max_checkout <= rental_started_at %}<p>Không còn thời gian thuê hợp lệ trước lịch đặt này.</p>{% endif %}
+          {% if rental_min_checkout_input and rental_max_checkout < rental_min_checkout_input %}<p>Không còn khoảng thời gian thuê đủ tối thiểu 60 phút trước lịch đặt này.</p>{% endif %}
         {% endif %}
       </div>
     {% endif %}
@@ -97,7 +97,7 @@
           name="expected_checkout"
           type="datetime-local"
           value="{{ rental_checkout_value }}"
-          min="{{ rental_min_checkout_input.strftime('%Y-%m-%dT%H:%M') if rental_edit_mode and rental_min_checkout else (rental_started_at.strftime('%Y-%m-%dT%H:%M') if rental_started_at else '') }}"
+          min="{{ rental_min_checkout_input.strftime('%Y-%m-%dT%H:%M') if rental_min_checkout_input else (rental_started_at.strftime('%Y-%m-%dT%H:%M') if rental_started_at else '') }}"
           {% if rental_max_checkout %}max="{{ rental_max_checkout.strftime('%Y-%m-%dT%H:%M') }}"{% endif %}
           required
           aria-describedby="expected-checkout-error"

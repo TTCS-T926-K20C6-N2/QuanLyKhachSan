@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import importlib
 import re
-from pathlib import Path
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
+
+import pytest
 
 from conftest import DEMO_EMAIL, DEMO_PASSWORD
 from hotel_app.extensions import db
 from hotel_app.models import Room, RoomRental, RoomReservation
-
 
 def _csrf_token(client, path: str = "/login") -> str:
     html = client.get(path).get_data(as_text=True)
@@ -41,6 +43,34 @@ def _room_card_html(html: str, room_number: str) -> str:
     assert match is not None
     return match.group(1)
 
+
+
+def _freeze_app_now(monkeypatch, now: datetime) -> None:
+    app_module = importlib.import_module("hotel_app.app")
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now if tz is None else now.replace(tzinfo=tz)
+
+    monkeypatch.setattr(app_module, "datetime", FrozenDateTime)
+
+
+def _set_rental_interval(app, rental_id: int, started_at: datetime, checkout: datetime) -> None:
+    duration_minutes = int((checkout - started_at).total_seconds() // 60)
+    with app.app_context():
+        rental = db.session.get(RoomRental, rental_id)
+        room = db.session.get(Room, rental.room_id)
+        rental.rented_at = started_at
+        rental.expected_checkout = checkout
+        rental.duration_minutes = duration_minutes
+        rental.total_price = int(
+            (Decimal(rental.nightly_rate) * Decimal(duration_minutes) / Decimal(1440))
+            .quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+        room.check_in = started_at.strftime("%H:%M")
+        room.check_out = checkout.strftime("%H:%M")
+        db.session.commit()
 
 def _datetime_local(value: datetime) -> str:
     return value.strftime("%Y-%m-%dT%H:%M")
@@ -159,6 +189,128 @@ def test_occupied_room_cannot_be_rented_again(client, app):
     assert "Cho thuê" not in occupied_card
 
 
+
+@pytest.mark.parametrize("duration_minutes", [1, 30, 59, 60, 61])
+def test_new_rental_enforces_minimum_duration_and_is_atomic(client, app, monkeypatch, duration_minutes):
+    assert _login(client).status_code == 302
+    csrf_token = _csrf_token(client, "/rooms/101/rent")
+    started_at = datetime(2035, 5, 6, 22, 2)
+    _freeze_app_now(monkeypatch, started_at)
+
+    response = client.post(
+        "/rooms/101/rent",
+        data={
+            "csrf_token": csrf_token,
+            "expected_checkout": _datetime_local(
+                started_at + timedelta(minutes=duration_minutes)
+            ),
+            # A client-supplied start must not affect the server's actual start.
+            "rental_started_at": "2000-01-01T00:00",
+        },
+    )
+
+    with app.app_context():
+        room = db.session.execute(
+            db.select(Room).where(Room.number == "101")
+        ).scalar_one()
+        rentals = db.session.execute(
+            db.select(RoomRental).where(RoomRental.room_number == "101")
+        ).scalars().all()
+        if duration_minutes < 60:
+            html = response.get_data(as_text=True)
+            assert response.status_code == 400
+            assert "Thời gian thuê tối thiểu là 60 phút." in html
+            assert "data-open-on-load" in html
+            assert _datetime_local(started_at + timedelta(minutes=duration_minutes)) in html
+            assert (room.status, room.state, room.check_in, room.check_out) == (
+                "Phòng trống", "empty", None, None
+            )
+            assert rentals == []
+        else:
+            assert response.status_code == 302
+            assert len(rentals) == 1
+            assert rentals[0].rented_at == started_at
+            assert rentals[0].duration_minutes == duration_minutes
+            assert (room.status, room.state) == ("Đang thuê", "occupied")
+
+
+def test_new_rental_requires_checkout_and_preserves_room(client, app, monkeypatch):
+    assert _login(client).status_code == 302
+    csrf_token = _csrf_token(client, "/rooms/101/rent")
+    _freeze_app_now(monkeypatch, datetime(2035, 5, 6, 22, 2))
+
+    response = client.post(
+        "/rooms/101/rent",
+        data={"csrf_token": csrf_token, "expected_checkout": ""},
+    )
+
+    assert response.status_code == 400
+    assert "Vui lòng chọn thời gian trả phòng hợp lệ." in response.get_data(as_text=True)
+    with app.app_context():
+        room = db.session.execute(
+            db.select(Room).where(Room.number == "101")
+        ).scalar_one()
+        assert (room.status, room.state, room.check_in, room.check_out) == (
+            "Phòng trống", "empty", None, None
+        )
+        assert db.session.execute(db.select(RoomRental)).scalars().all() == []
+
+
+
+def test_cleaning_buffer_can_leave_no_valid_minimum_rental_window(client, app, monkeypatch):
+    assert _login(client).status_code == 302
+    started_at = datetime(2035, 5, 6, 16, 30)
+    with app.app_context():
+        room = db.session.execute(
+            db.select(Room).where(Room.number == "101")
+        ).scalar_one()
+        reservation_start = started_at + timedelta(minutes=90)
+        db.session.add(
+            RoomReservation(
+                room_id=room.id, room_number=room.number, guest_name="Boundary",
+                guest_phone="0901234567", reserved_from=reservation_start,
+                reserved_until=reservation_start + timedelta(hours=2),
+                duration_minutes=120, nightly_rate=500000, total_price=41667,
+                status="booked", created_at=started_at,
+            )
+        )
+        db.session.commit()
+    csrf_token = _csrf_token(client, "/rooms/101/rent")
+    _freeze_app_now(monkeypatch, started_at)
+
+    page = client.get("/rooms/101/rent").get_data(as_text=True)
+    assert "Không còn khoảng thời gian thuê đủ tối thiểu 60 phút trước lịch đặt này." in page
+    assert f'min="{_datetime_local(started_at + timedelta(minutes=60))}"' in page
+    assert f'max="{_datetime_local(started_at + timedelta(minutes=30))}"' in page
+
+    response = client.post(
+        "/rooms/101/rent",
+        data={
+            "csrf_token": csrf_token,
+            "expected_checkout": _datetime_local(started_at + timedelta(minutes=30)),
+        },
+    )
+    assert response.status_code == 400
+    assert "Không còn thời gian thuê tối thiểu 60 phút trước lịch đặt tiếp theo." in response.get_data(as_text=True)
+    with app.app_context():
+        room = db.session.execute(
+            db.select(Room).where(Room.number == "101")
+        ).scalar_one()
+        assert (room.status, room.state, room.check_in, room.check_out) == (
+            "Phòng trống", "empty", None, None
+        )
+        assert db.session.execute(db.select(RoomRental)).scalars().all() == []
+
+def test_new_rental_dialog_minimum_checkout_is_one_hour(client, monkeypatch):
+    assert _login(client).status_code == 302
+    started_at = datetime(2035, 5, 6, 22, 2)
+    _freeze_app_now(monkeypatch, started_at)
+
+    html = client.get("/rooms/101/rent").get_data(as_text=True)
+
+    assert f'min="{_datetime_local(started_at + timedelta(minutes=60))}"' in html
+    assert "minimumCheckoutValue" in html
+
 def _rent_room(client, room_number: str = "101") -> RoomRental:
     response = client.post(
         f"/rooms/{room_number}/rent",
@@ -179,6 +331,133 @@ def _rent_room(client, room_number: str = "101") -> RoomRental:
             .limit(1)
         ).scalar_one()
 
+
+
+@pytest.mark.parametrize("duration_minutes", [30, 59, 60, 61])
+def test_rental_adjustment_enforces_minimum_total_duration_atomically(
+    client, app, monkeypatch, duration_minutes
+):
+    assert _login(client).status_code == 302
+    rental = _rent_room(client)
+    started_at = datetime(2035, 5, 6, 22, 2)
+    old_checkout = started_at + timedelta(hours=2)
+    _set_rental_interval(app, rental.id, started_at, old_checkout)
+    csrf_token = _csrf_token(client, "/rooms/101/rent/edit")
+    _freeze_app_now(monkeypatch, started_at)
+
+    response = client.post(
+        "/rooms/101/rent/edit",
+        data={
+            "csrf_token": csrf_token,
+            "expected_checkout": _datetime_local(
+                started_at + timedelta(minutes=duration_minutes)
+            ),
+        },
+    )
+
+    with app.app_context():
+        unchanged = db.session.get(RoomRental, rental.id)
+        room = db.session.execute(
+            db.select(Room).where(Room.number == "101")
+        ).scalar_one()
+        if duration_minutes < 60:
+            html = response.get_data(as_text=True)
+            assert response.status_code == 400
+            assert "Thời gian thuê tối thiểu là 60 phút." in html
+            assert "data-open-on-load" in html
+            assert _datetime_local(started_at + timedelta(minutes=duration_minutes)) in html
+            assert unchanged.expected_checkout == old_checkout
+            assert unchanged.duration_minutes == 120
+            assert unchanged.total_price > 0
+            assert room.check_out == old_checkout.strftime("%H:%M")
+        else:
+            assert response.status_code == 302
+            assert unchanged.expected_checkout == started_at + timedelta(minutes=duration_minutes)
+            assert unchanged.duration_minutes == duration_minutes
+            assert room.check_out == unchanged.expected_checkout.strftime("%H:%M")
+            assert unchanged.nightly_rate == rental.nightly_rate
+
+
+def test_existing_rental_can_extend_by_ten_minutes_without_another_full_hour(
+    client, app, monkeypatch
+):
+    assert _login(client).status_code == 302
+    rental = _rent_room(client)
+    started_at = datetime(2035, 5, 6, 14, 0)
+    original_checkout = started_at + timedelta(hours=5)
+    _set_rental_interval(app, rental.id, started_at, original_checkout)
+    with app.app_context():
+        room = db.session.execute(
+            db.select(Room).where(Room.number == "101")
+        ).scalar_one()
+        room.price = 900000
+        db.session.commit()
+    csrf_token = _csrf_token(client, "/rooms/101/rent/edit")
+    _freeze_app_now(monkeypatch, original_checkout)
+    new_checkout = original_checkout + timedelta(minutes=10)
+
+    response = client.post(
+        "/rooms/101/rent/edit",
+        data={"csrf_token": csrf_token, "expected_checkout": _datetime_local(new_checkout)},
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        updated = db.session.get(RoomRental, rental.id)
+        assert updated.expected_checkout == new_checkout
+        assert updated.duration_minutes == 310
+        assert updated.nightly_rate == 500000
+        expected_total = int(
+            (Decimal(500000) * Decimal(310) / Decimal(1440))
+            .quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+        assert updated.total_price == expected_total
+
+
+def test_legacy_short_rental_can_be_adjusted_to_sixty_minutes(
+    client, app, monkeypatch
+):
+    assert _login(client).status_code == 302
+    rental = _rent_room(client)
+    started_at = datetime(2035, 5, 6, 22, 2)
+    _set_rental_interval(
+        app, rental.id, started_at, started_at + timedelta(minutes=1)
+    )
+    assert client.get("/rooms").status_code == 200
+    csrf_token = _csrf_token(client, "/rooms/101/rent/edit")
+    _freeze_app_now(monkeypatch, started_at + timedelta(minutes=30))
+
+    response = client.post(
+        "/rooms/101/rent/edit",
+        data={
+            "csrf_token": csrf_token,
+            "expected_checkout": _datetime_local(started_at + timedelta(minutes=60)),
+        },
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        updated = db.session.get(RoomRental, rental.id)
+        assert updated.rented_at == started_at
+        assert updated.expected_checkout == started_at + timedelta(minutes=60)
+        assert updated.duration_minutes == 60
+
+
+def test_rental_edit_minimum_uses_original_start_and_future_time(client, app, monkeypatch):
+    assert _login(client).status_code == 302
+    rental = _rent_room(client)
+    started_at = datetime(2035, 5, 6, 14, 0)
+    _set_rental_interval(app, rental.id, started_at, started_at + timedelta(hours=5))
+
+    for now, expected_minimum in [
+        (started_at + timedelta(minutes=30), started_at + timedelta(minutes=60)),
+        (started_at + timedelta(hours=2), started_at + timedelta(hours=2, minutes=1)),
+    ]:
+        _freeze_app_now(monkeypatch, now)
+        html = client.get("/rooms/101/rent/edit").get_data(as_text=True)
+        match = re.search(r'<input[^>]*id="expected-checkout"[^>]*min="([^"]+)"', html)
+        assert match is not None
+        assert match.group(1) == _datetime_local(expected_minimum)
 
 def test_active_rental_can_change_checkout_and_recalculate_price(client, app):
     assert _login(client).status_code == 302
@@ -425,16 +704,19 @@ def test_rental_edit_checkout_after_reservation_start_is_rejected_atomically(cli
         assert room.check_out == before_checkout
 
 
-def test_rental_edit_minimum_uses_next_minute_at_minute_precision(client):
+def test_rental_edit_minimum_includes_stay_and_future_time(client, app):
     assert _login(client).status_code == 302
-    _rent_room(client)
+    rental = _rent_room(client)
+    with app.app_context():
+        started_at = db.session.get(RoomRental, rental.id).rented_at
+    now_minute = datetime.now().replace(second=0, microsecond=0)
     html = client.get("/rooms/101/rent/edit").get_data(as_text=True)
     match = re.search(r'<input[^>]*id="expected-checkout"[^>]*min="([^"]+)"', html)
     assert match is not None
     minimum = datetime.strptime(match.group(1), "%Y-%m-%dT%H:%M")
-    now_minute = datetime.now().replace(second=0, microsecond=0)
-    assert now_minute + timedelta(minutes=1) <= minimum <= now_minute + timedelta(minutes=2)
-
+    assert minimum >= started_at + timedelta(minutes=60)
+    assert minimum > now_minute
+    assert minimum <= max(started_at + timedelta(minutes=60), now_minute + timedelta(minutes=2))
 
 def test_occupied_room_edit_anchor_and_direct_get_render_usable_edit_modal(client, app):
     assert _login(client).status_code == 302

@@ -377,3 +377,15 @@ a:focus-visible,
 .action-button--maintenance { border-color: #a8c7e5; background: #e8f1fb; color: #245a8a; }
 .action-button--maintenance:hover,
 .action-button--maintenance:focus-visible { border-color: #7da8d2; background: #dceafa; }
+
+.income-statistics__table-wrap { overflow-x: auto; }
+.income-statistics__table { width: 100%; border-collapse: collapse; }
+.income-statistics__table th,
+.income-statistics__table td { padding: 14px 22px; border-bottom: 1px solid #e4ebf1; text-align: left; vertical-align: middle; }
+.income-statistics__table thead th { background: #f5f8fb; color: #52667a; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
+.income-statistics__table tbody th,
+.income-statistics__table tbody td { color: #334b63; font-size: 0.9rem; font-weight: 500; }
+.income-statistics__table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.income-statistics__table tfoot th,
+.income-statistics__table tfoot td { border-bottom: 0; border-top: 2px solid #cbd8e4; color: #17324c; font-weight: 800; }
+@media (max-width: 520px) { .income-statistics__table th, .income-statistics__table td { padding: 12px 14px; } }

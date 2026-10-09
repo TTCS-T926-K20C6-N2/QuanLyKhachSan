@@ -195,6 +195,12 @@
       const pad = (value) => String(value).padStart(2, "0");
       return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
     };
+    const minimumCheckoutValue = (startValue) => {
+      const minimum = new Date(startValue);
+      if (!Number.isFinite(minimum.getTime())) return "";
+      minimum.setMinutes(minimum.getMinutes() + 60);
+      return localDateTimeValue(minimum);
+    };
     const refreshRentalEstimate = () => {
       const start = new Date(rentalStart.value);
       const checkout = new Date(checkoutInput.value);
@@ -225,7 +231,7 @@
       image.src = trigger.dataset.roomImage;
       image.alt = `Ảnh phòng ${trigger.dataset.roomNumber}`;
       rentalStart.value = localDateTimeValue(new Date());
-      checkoutInput.min = rentalStart.value;
+      checkoutInput.min = minimumCheckoutValue(rentalStart.value);
       checkoutInput.value = "";
       refreshRentalEstimate();
       rentDialog.showModal();
@@ -245,7 +251,7 @@
       && rentDialog.hasAttribute("data-open-on-load")) {
       rentForm.dataset.nightlyRate = rentDialog.dataset.nightlyRate;
       if (rentDialog.dataset.editMode !== "true") {
-        checkoutInput.min = rentalStart.value;
+        checkoutInput.min = minimumCheckoutValue(rentalStart.value);
       }
       refreshRentalEstimate();
       rentDialog.showModal();
