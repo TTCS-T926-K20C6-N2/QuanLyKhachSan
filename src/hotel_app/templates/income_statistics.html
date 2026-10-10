@@ -4,12 +4,26 @@
 
 {% block content %}
   <section class="dashboard-panel income-statistics" aria-labelledby="income-statistics-title">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <p class="form-alert{% if category == 'error' %} form-alert--error{% endif %}" role="status">{{ message }}</p>
+      {% endfor %}
+    {% endwith %}
     <header class="panel-header">
       <div>
         <h2 id="income-statistics-title">Thống kê thu nhập</h2>
         <p>Năm {{ report_year }}</p>
       </div>
-      <a class="action-button action-button--primary" href="{{ url_for('export_income_statistics_pdf') }}">Export PDF</a>
+      <div class="income-statistics__controls">
+        <form class="income-statistics__filter" method="get" action="{{ url_for('income_statistics') }}">
+          <div class="form-field income-statistics__year-field">
+            <label for="income-report-year">Năm</label>
+            <input id="income-report-year" name="year" type="number" min="1" max="9998" step="1" value="{{ report_year }}" required>
+          </div>
+          <button class="action-button action-button--primary" type="submit">Xem</button>
+        </form>
+        <a class="action-button action-button--primary" href="{{ url_for('export_income_statistics_pdf', year=report_year) }}">Export PDF</a>
+      </div>
     </header>
     <div class="income-statistics__table-wrap" role="region" aria-label="Thống kê thu nhập năm {{ report_year }}" tabindex="0">
       <table class="income-statistics__table">

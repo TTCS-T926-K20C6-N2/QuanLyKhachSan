@@ -557,6 +557,16 @@ def get_monthly_income(year: int) -> dict[str, Any]:
     }
 
 
+def _parse_income_report_year(value: str | None) -> int | None:
+    if value is None:
+        return datetime.now().year
+    try:
+        year = int(value)
+    except ValueError:
+        return None
+    return year if 1 <= year <= 9998 else None
+
+
 def format_vnd(value: int) -> str:
     """Format integer VND using the Vietnamese thousands separator."""
     return f"{int(value):,}".replace(",", ".") + " VNĐ"
@@ -1262,7 +1272,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
-        report_year = datetime.now().year
+        report_year = _parse_income_report_year(request.args.get("year"))
+        if report_year is None:
+            flash("Năm cần nằm trong khoảng 1 đến 9998.", "error")
+            return redirect(url_for("income_statistics"))
         report = get_monthly_income(report_year)
         monthly_rows = [
             {
@@ -1284,7 +1297,10 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         user = current_user()
         if user is None:
             return redirect(url_for("login"))
-        report_year = datetime.now().year
+        report_year = _parse_income_report_year(request.args.get("year"))
+        if report_year is None:
+            flash("Năm cần nằm trong khoảng 1 đến 9998.", "error")
+            return redirect(url_for("income_statistics"))
         report = get_monthly_income(report_year)
         monthly_rows = [
             (month, format_vnd(report["monthly_totals"][month]))

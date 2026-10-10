@@ -122,7 +122,7 @@ def test_reservations_and_service_logs_are_not_income(app):
     assert report["annual_total"] == 250_000
 
 
-def test_statistics_route_is_authenticated_and_renders_current_year_only(app, client, monkeypatch):
+def test_statistics_route_is_authenticated_and_uses_selected_year(app, client, monkeypatch):
     app_module = importlib.import_module("hotel_app.app")
 
     class FrozenDateTime(datetime):
@@ -144,10 +144,12 @@ def test_statistics_route_is_authenticated_and_renders_current_year_only(app, cl
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "Năm 2034" in html
+    assert "Năm 2033" in html
+    assert 'id="income-report-year" name="year" type="number"' in html
+    assert 'value="2033"' in html
     assert [int(month) for month in re.findall(r'<th scope="row">Tháng (\d+)</th>', html)] == list(range(1, 13))
-    assert "500.000 VNĐ" in html
-    assert "900.000 VNĐ" not in html
+    assert "900.000 VNĐ" in html
+    assert "500.000 VNĐ" not in html
     table = re.search(r'<table class="income-statistics__table">(.*?)</table>', html, re.S)
     assert table is not None
     table_html = table.group(1)
@@ -163,11 +165,15 @@ def test_statistics_route_is_authenticated_and_renders_current_year_only(app, cl
     footer_rows = re.findall(r"<tr>(.*?)</tr>", footer.group(1), re.S)
     assert len(footer_rows) == 1
     assert len(re.findall(r"<(?:th|td)\b", footer_rows[0])) == 2
-    assert '<tr><th scope="row">Tổng cộng</th><td>500.000 VNĐ</td></tr>' in table_html
+    assert '<tr><th scope="row">Tổng cộng</th><td>900.000 VNĐ</td></tr>' in table_html
+    assert 'href="/income-statistics/export?year=2033"' in html
     assert 'href="/income-statistics" aria-current="page"' in html
     assert "Thống kê thu nhập" in html
     assert 'class="dashboard-shell"' in html
     assert 'class="topbar"' in html
+
+    current_year_response = client.get("/income-statistics")
+    assert "Năm 2034" in current_year_response.get_data(as_text=True)
 
 
 def test_empty_statistics_page_displays_twelve_zero_rows_and_zero_total(app, client):
@@ -185,6 +191,18 @@ def test_empty_statistics_page_displays_twelve_zero_rows_and_zero_total(app, cli
     assert '<tr><th scope="row">Tổng cộng</th><td>0 VNĐ</td></tr>' in table_html
 
 
+def test_statistics_and_pdf_reject_invalid_year(app, client):
+    _authenticate(app, client)
+
+    for path in ("/income-statistics?year=abc", "/income-statistics/export?year=9999"):
+        response = client.get(path)
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/income-statistics")
+
+    response = client.get("/income-statistics")
+    assert "Năm cần nằm trong khoảng 1 đến 9998." in response.get_data(as_text=True)
+
+
 def test_income_statistics_pdf_export_is_authenticated_and_downloadable(app, client):
     anonymous = client.get("/income-statistics/export")
     assert anonymous.status_code == 302
@@ -200,6 +218,38 @@ def test_income_statistics_pdf_export_is_authenticated_and_downloadable(app, cli
     )
     assert response.data.startswith(b"%PDF-")
     assert b"/Type /Page" in response.data
+
+
+def test_income_statistics_pdf_uses_selected_year_and_matching_totals(app, client, monkeypatch):
+    app_module = importlib.import_module("hotel_app.app")
+    captured = {}
+
+    def capture_pdf(report_year, monthly_rows, formatted_annual_total):
+        captured["report_year"] = report_year
+        captured["monthly_rows"] = monthly_rows
+        captured["formatted_annual_total"] = formatted_annual_total
+        return b"%PDF-test"
+
+    monkeypatch.setattr(app_module, "build_income_statistics_pdf", capture_pdf)
+    with app.app_context():
+        _add_rental(datetime(2034, 1, 5, 10), 500_000)
+        _add_rental(datetime(2033, 1, 5, 10), 900_000)
+        db.session.commit()
+    _authenticate(app, client)
+
+    response = client.get("/income-statistics/export?year=2034")
+
+    assert response.status_code == 200
+    assert response.data == b"%PDF-test"
+    assert response.headers["Content-Disposition"].startswith(
+        "attachment; filename=thong-ke-thu-nhap-2034.pdf"
+    )
+    assert captured["report_year"] == 2034
+    assert captured["monthly_rows"][0] == (1, "500.000 VNĐ")
+    assert captured["monthly_rows"][1:] == [
+        (month, "0 VNĐ") for month in range(2, 13)
+    ]
+    assert captured["formatted_annual_total"] == "500.000 VNĐ"
 
 
 def test_integrated_2026_report_updates_rental_once_and_ignores_reservation(app):

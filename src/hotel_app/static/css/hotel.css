@@ -379,6 +379,10 @@ a:focus-visible,
 .action-button--maintenance:focus-visible { border-color: #7da8d2; background: #dceafa; }
 
 .income-statistics__table-wrap { overflow-x: auto; }
+.income-statistics__controls,
+.income-statistics__filter { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; }
+.income-statistics__year-field { width: 132px; }
+.income-statistics__controls .action-button { min-height: 42px; }
 .income-statistics__table { width: 100%; border-collapse: collapse; }
 .income-statistics__table th,
 .income-statistics__table td { padding: 14px 22px; border-bottom: 1px solid #e4ebf1; text-align: left; vertical-align: middle; }
