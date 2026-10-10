@@ -9,6 +9,7 @@
         <h2 id="income-statistics-title">Thống kê thu nhập</h2>
         <p>Năm {{ report_year }}</p>
       </div>
+      <a class="action-button action-button--primary" href="{{ url_for('export_income_statistics_pdf') }}">Export PDF</a>
     </header>
     <div class="income-statistics__table-wrap" role="region" aria-label="Thống kê thu nhập năm {{ report_year }}" tabindex="0">
       <table class="income-statistics__table">

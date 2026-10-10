@@ -7,10 +7,21 @@ import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, flash, redirect, render_template, request, send_from_directory, session, url_for
+from flask import (
+    Flask,
+    flash,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    send_from_directory,
+    session,
+    url_for,
+)
 from flask_wtf.csrf import CSRFError
 from sqlalchemy import func, inspect, text, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -23,6 +34,7 @@ from .auth_recovery import (
     send_password_reset_otp,
 )
 from .extensions import csrf, db
+from .income_pdf import build_income_statistics_pdf
 from .models import (
     LegacyRoomSessionMigration,
     Room,
@@ -1265,6 +1277,29 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             report_year=report_year,
             monthly_rows=monthly_rows,
             formatted_annual_total=format_vnd(report["annual_total"]),
+        )
+
+    @app.route("/income-statistics/export")
+    def export_income_statistics_pdf():
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+        report_year = datetime.now().year
+        report = get_monthly_income(report_year)
+        monthly_rows = [
+            (month, format_vnd(report["monthly_totals"][month]))
+            for month in range(1, 13)
+        ]
+        pdf_content = build_income_statistics_pdf(
+            report_year,
+            monthly_rows,
+            format_vnd(report["annual_total"]),
+        )
+        return send_file(
+            BytesIO(pdf_content),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"thong-ke-thu-nhap-{report_year}.pdf",
         )
 
     @app.route("/rooms")

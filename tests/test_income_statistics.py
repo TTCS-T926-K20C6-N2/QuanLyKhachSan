@@ -185,6 +185,23 @@ def test_empty_statistics_page_displays_twelve_zero_rows_and_zero_total(app, cli
     assert '<tr><th scope="row">Tổng cộng</th><td>0 VNĐ</td></tr>' in table_html
 
 
+def test_income_statistics_pdf_export_is_authenticated_and_downloadable(app, client):
+    anonymous = client.get("/income-statistics/export")
+    assert anonymous.status_code == 302
+    assert anonymous.headers["Location"].endswith("/login")
+
+    _authenticate(app, client)
+    response = client.get("/income-statistics/export")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+    assert response.headers["Content-Disposition"].startswith(
+        f"attachment; filename=thong-ke-thu-nhap-{datetime.now().year}.pdf"
+    )
+    assert response.data.startswith(b"%PDF-")
+    assert b"/Type /Page" in response.data
+
+
 def test_integrated_2026_report_updates_rental_once_and_ignores_reservation(app):
     with app.app_context():
         room = Room(number="TEST-INCOME-2034", floor="Test", type="Test", price=9_000_000, status="Đang thuê", state="occupied")
