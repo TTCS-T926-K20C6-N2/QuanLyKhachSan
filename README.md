@@ -17,9 +17,6 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-`requirements.txt` đã khai báo ReportLab để xuất PDF. Lệnh cài requirements ở
-trên sẽ cài thư viện này; không cần cài package PDF riêng.
-
 `.env` là cấu hình riêng trên máy và không được commit lên Git.
 `.env.example` là file mẫu an toàn được chia sẻ qua Git; không ghi thông tin
 đăng nhập thật vào đó. Các tính năng thông thường vẫn chạy khi chưa cấu hình
